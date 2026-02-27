@@ -17,5 +17,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "devDependencies": {}
+  "dependencies": {
+    "mqtt": "^5.15.0"
+  }
 }
