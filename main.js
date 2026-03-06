@@ -11,7 +11,10 @@ app.get('/', (req, res) => {
 })
 
 app.get("/get/:testId", (req, res) => {
-  res.send(`Data received: ${req.body.testId}\n`)
+
+  const searchKey = req.params.testId
+
+  res.send(`Data received: ${searchKey}\n`)
 })
 
 app.post('/post', (req, res) => {
