@@ -21,15 +21,25 @@ app.get("/get/:testId", async (req, res) => {
     .on("error", (err) => console.log("Redis Client Error", err))
     .connect();
   
-  // await client.set("key", "test value");
   const value = await client.get(searchKey);
-  console.log(value)
+  console.log("Searched data", value)
   client.destroy();
   
   res.send(`Data received: ${searchKey}\n`)
 })
 
-app.post('/post', (req, res) => {
+app.post('/post/:testInput', async (req, res) => {
+
+  const testInput = req.params.testInput
+  console.log("Test Input", testInput)
+
+  const client = await createClient({ url: process.env.REDIS_URL })
+    .on("error", (err) => console.log("Redis Client Error", err))
+    .connect();
+  
+  await client.set("key", testInput);
+  client.destroy();
+
   res.send('Data received\n')
 })
 
