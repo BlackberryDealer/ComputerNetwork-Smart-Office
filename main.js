@@ -1,5 +1,8 @@
 import express from 'express'
 
+import 'dotenv/config'
+import './redis.js'
+
 const app = express()
 
 app.get('/', (req, res) => {
