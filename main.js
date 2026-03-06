@@ -1,9 +1,6 @@
 import express from 'express'
-
 import 'dotenv/config'
-// import './redis.js'
-import { createClient } from "redis";
-
+import redisClient from './config/redis.js'
 
 const app = express()
 app.use(express.json())
@@ -17,13 +14,8 @@ app.get("/get/:testId", async (req, res) => {
 
   const searchKey = req.params.testId
   
-  const client = await createClient({ url: process.env.REDIS_URL })
-    .on("error", (err) => console.log("Redis Client Error", err))
-    .connect();
-  
-  const value = await client.get(searchKey);
+  const value = await redisClient.get(searchKey);
   console.log("Searched data", value)
-  client.destroy();
   
   res.send(`Data received: ${searchKey}\n`)
 })
@@ -32,13 +24,8 @@ app.post('/post/:testInput', async (req, res) => {
 
   const testInput = req.params.testInput
   console.log("Test Input", testInput)
-
-  const client = await createClient({ url: process.env.REDIS_URL })
-    .on("error", (err) => console.log("Redis Client Error", err))
-    .connect();
   
-  await client.set("key", testInput);
-  client.destroy();
+  await redisClient.set("key", testInput);
 
   res.send('Data received\n')
 })
