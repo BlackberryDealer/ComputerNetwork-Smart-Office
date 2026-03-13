@@ -6,8 +6,10 @@ const app = express()
 app.use(express.json())
 app.use(express.urlencoded({ extended: false }))
 
+app.use(express.static('public'));
+
 app.get('/', (req, res) => {
-  res.send('Hello World\n')
+  res.sendFile('index.html')
 })
 
 app.get("/get/:testId", async (req, res) => {
