@@ -6,14 +6,14 @@ import RPi.GPIO as GPIO
 from dht11 import DHT11
 
 # --- MQTT SETUP ---
-BROKER_IP = "127.0.0.1"  
+BROKER_IP = "127.0.0.1"
 BROKER_PORT = 1883
 TOPIC = "smartoffice/sensors"
 
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 try:
     mqtt_client.connect(BROKER_IP, BROKER_PORT, 60)
-    mqtt_client.loop_start()  
+    mqtt_client.loop_start()
     print(f"Connected to MQTT Broker at {BROKER_IP}")
 except Exception as e:
     print(f"Failed to connect to MQTT broker: {e}")
@@ -42,7 +42,6 @@ dht_sensor = DHT11(pin=4)  # Ensure this matches your physical wiring
 # --- EVENT HANDLERS ---
 last_triggered = {1: 0, 2: 0, 3: 0}
 COOLDOWN_SECONDS = 5
-
 def motion_handler(zone):
     now = time.time()
     if now - last_triggered[zone] > COOLDOWN_SECONDS:
@@ -68,10 +67,10 @@ try:
             temp = result.temperature
             humidity = result.humidity
             print(f"Temp: {temp:.1f}°C, Humidity: {humidity:.1f}%")
-            
+
             publish_data({
-                "type": "climate", 
-                "temp": temp, 
+                "type": "climate",
+                "temp": temp,
                 "humidity": humidity
             })
         else:
@@ -87,3 +86,4 @@ finally:
     mqtt_client.loop_stop()
     mqtt_client.disconnect()
     GPIO.cleanup()
+
