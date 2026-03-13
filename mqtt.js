@@ -1,4 +1,4 @@
-const mqtt = require('mqtt');
+import mqtt from 'mqtt'
 
 // Connect to a public test broker
 const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
