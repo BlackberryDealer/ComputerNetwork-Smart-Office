@@ -1,6 +1,5 @@
 import express from 'express'
 import 'dotenv/config'
-import redisClient from './config/redis.js'
 import { humidityRepository,
   temperatureRepository,
   motionRepository } from './config/redisRepository.js'
@@ -18,14 +17,14 @@ app.get('/', (req, res) => {
   res.sendFile('index.html')
 })
 
-app.get("/get/:testId", async (req, res) => {
+app.get("/get/:temperature", async (req, res) => {
 
-  const searchKey = req.params.testId
+  const searchTemperature = req.params.temperature
   
-  const value = await redisClient.get(searchKey);
-  console.log("Searched data", value)
+  const temperatureData = await temperatureRepository.search()
+      .where('temperature').equals(searchTemperature).return.all()
   
-  res.send(`Data received: ${searchKey}\n`)
+  res.json(`Data received: ${temperatureData}\n`)
 })
 
 app.post('/post/:temperature', async (req, res) => {
