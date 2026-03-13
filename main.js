@@ -1,6 +1,12 @@
 import express from 'express'
 import 'dotenv/config'
 import redisClient from './config/redis.js'
+import { humidityRepository,
+  temperatureRepository,
+  motionRepository } from './config/redisRepository.js'
+
+// Temporary test data
+import { EntityId } from 'redis-om'
 
 const app = express()
 app.use(express.json())
@@ -22,14 +28,18 @@ app.get("/get/:testId", async (req, res) => {
   res.send(`Data received: ${searchKey}\n`)
 })
 
-app.post('/post/:testInput', async (req, res) => {
+app.post('/post/:temperature', async (req, res) => {
 
-  const testInput = req.params.testInput
-  console.log("Test Input", testInput)
+  const temperature = parseFloat(req.params.temperature)
   
-  await redisClient.set("key", testInput);
+  let temperatureData = {
+    temperature,
+    timestamp: new Date().toISOString()
+  }
 
-  res.send('Data received\n')
+  temperatureData = await temperatureRepository.save(temperatureData)
+
+  res.send(`Data received. Temperature Entity: ${temperatureData[EntityId]}\n`)
 })
 
 app.listen(3000, () => {
