@@ -1,39 +1,71 @@
 import mqtt from 'mqtt'
 
-const brokerUrl = process.env.MQTT_BROKER_URL
-const topic = 'test/topic'
+const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883'
 
-// Connect to a public test broker
-const client = mqtt.connect(brokerUrl);
+// Use default reconnect to allow broker startup race
+const connectOptions = {
+  clientId: `node-client-${Math.random().toString(16).slice(2)}`,
+  clean: true,
+  reconnectPeriod: 2000,
+  connectTimeout: 30 * 1000,
+}
 
-// Connection event
-client.on('connect', () => {
-    console.log('Connected to broker');
+// Separate publisher and subscriber clients (same broker)
+const pubClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: `node-pub-${Math.random().toString(16).slice(2)}` })
+const subClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: `node-sub-${Math.random().toString(16).slice(2)}` })
 
-    // Subscribe to a topic
-    client.subscribe('test/topic', (err) => {
-        if (!err) {
-            console.log('Subscribed to test/topic');
+subClient.on('connect', () => {
+  console.log('[MQTT SUB] connected to broker', brokerUrl)
 
-        }
-    });
-    // Publish a message
-    // client.publish('test/topic', 'Hello World!!!');
-});
+  // Accepts all office-related topics
+  subClient.subscribe('office/#', { qos: 0 }, (err) => {
+    if (err) {
+      console.error('[MQTT SUB] subscribe error', err)
+      return
+    }
+    console.log('[MQTT SUB] subscribed to office/#')
+  })
+})
 
-// Receive messages
-client.on('message', (topic, message) => {
-    console.log(`Received message on ${topic}: ${message.toString()}`);
+subClient.on('message', (topic, message) => {
+  const text = message.toString()
+  console.log(`[MQTT SUB] message: ${topic} -> ${text}`)
+  try {
+    const parsed = JSON.parse(text)
+    console.log('[MQTT SUB] parsed payload', parsed)
+  } catch (e) {
+    console.warn('[MQTT SUB] non-json payload:', text)
+  }
+})
 
-    const data = message.toString();
-    console.log("Received data:", data);
+subClient.on('error', (err) => {
+  console.error('[MQTT SUB] error', err)
+})
 
-    const parsedData = JSON.parse(data);
-    console.log("Parsed data:", parsedData);
-    console.log("Temperature:", parsedData.data);
-});
+pubClient.on('connect', () => {
+  console.log('[MQTT PUB] connected to broker', brokerUrl)
+})
+pubClient.on('error', (err) => {
+  console.error('[MQTT PUB] error', err)
+})
 
-// Error handling
-client.on('error', (err) => {
-    console.error('Connection error:', err);
-});
+export function publishSensorData(topic, payload) {
+  const message = typeof payload === 'string' ? payload : JSON.stringify(payload)
+  pubClient.publish(topic, message, { qos: 0, retain: false }, (err) => {
+    if (err) {
+      console.error('[MQTT PUB] publish error', err)
+    } else {
+      console.log(`[MQTT PUB] published to ${topic}: ${message}`)
+    }
+  })
+}
+
+// Optional test periodic publishing
+// setInterval(() => {
+//   publishSensorData('office/temperature', {
+//     sensor: 'temperature',
+//     value: Number((20 + Math.random() * 10).toFixed(1)),
+//     ts: new Date().toISOString(),
+//   })
+// }, 10000)
+
