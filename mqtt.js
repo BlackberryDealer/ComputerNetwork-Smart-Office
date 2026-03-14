@@ -7,8 +7,6 @@ import {
   motionRepository,
 } from './config/redisRepository.js'
 
-export const mqttEvents = new EventEmitter()
-
 const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883'
 
 // Use default reconnect to allow broker startup race
@@ -71,7 +69,6 @@ subClient.on('message', async (topic, message) => {
     console.log('[MQTT SUB] parsed payload', parsed)
     await saveToRedis(topic, parsed)
     const update = { topic, payload: parsed, timestamp: new Date().toISOString() }
-    mqttEvents.emit('sensor-update', update)
     await redisClient.publish('sensor:updates', JSON.stringify(update))
   } catch (e) {
     console.warn('[MQTT SUB] non-json payload:', text)

@@ -9,7 +9,7 @@ import {
   motionRepository,
 } from './config/redisRepository.js'
 import redisClient from './config/redis.js'
-import { publishSensorData, mqttEvents } from './mqtt.js'
+import { publishSensorData } from './mqtt.js'
 import { EntityId } from 'redis-om'
 import { Server as SocketIOServer } from 'socket.io'
 
@@ -50,20 +50,9 @@ app.get('/', (req, res) => {
 io.on('connection', (socket) => {
   console.log('Socket client connected', socket.id)
 
-  const updateHandler = (data) => {
-    socket.emit('sensor-update', data)
-  }
-
-  mqttEvents.on('sensor-update', updateHandler)
-
   socket.on('disconnect', () => {
-    mqttEvents.off('sensor-update', updateHandler)
     console.log('Socket client disconnected', socket.id)
   })
-})
-
-mqttEvents.on('sensor-update', (data) => {
-  io.emit('sensor-update', data)
 })
 
 // Redis pub/sub stream to socket.io

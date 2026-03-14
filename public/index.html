@@ -18,7 +18,7 @@
     <p class="live">Latest update: <span id="latest">none</span></p>
   </div>
   <div class="box">
-    <h3>Recent messages (last 10)</h3>
+    <h3>Recent messages (last 30)</h3>
     <div id="messages" class="list">No messages yet.</div>
   </div>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
@@ -43,8 +43,8 @@
       count += 1
       countEl.textContent = count
       latestEl.textContent = `${data.topic} ${JSON.stringify(data.payload)}`
-      history.unshift(`${new Date(data.timestamp).toLocaleTimeString()} | ${data.topic} | ${JSON.stringify(data.payload)}`)
-      if (history.length > 10) history.pop()
+      history.unshift(`${new Date(data.timestamp).toISOString()} | ${data.topic} | ${JSON.stringify(data.payload)}`)
+      if (history.length > 30) history.pop()
       messagesEl.textContent = history.join('\n')
     })
   </script>

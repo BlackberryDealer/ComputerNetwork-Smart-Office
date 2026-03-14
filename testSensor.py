@@ -38,7 +38,7 @@ mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqtt_client.connect(BROKER_IP, BROKER_PORT)
 mqtt_client.loop_start()
 
-for i in range(30):
+for i in range(1, 61):
     message = f"Sending data number of times: {i}"
     json_payload = json.dumps({
         "motion": True,
