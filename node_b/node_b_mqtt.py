@@ -22,8 +22,6 @@ TEST_TOPIC = "smartoffice/sensors"
 ac_mode = "OFF"
 presentation_mode = False
 last_motion = {1: 0, 2: 0, 3: 0}
-
-# Set how long the LED stays on after motion stops (in seconds)
 MOTION_TIMEOUT = 7.0 
 
 def on_connect(client, userdata, flags, rc):
@@ -44,20 +42,30 @@ def on_message(client, userdata, msg):
             zone = data.get("zone")
             if zone in leds:
                 leds[zone].on()
-                # Reset the countdown timer for this specific zone
                 last_motion[zone] = time.time()
                 print(f"Zone {zone} LED ON")
                 
-        # 2. Climate Logic
+        # 2. Climate Logic with Occupancy Check
         elif msg_type == "climate" and not presentation_mode:
-            temp = data.get("temp")
-            if temp >= 28.0:
-                ac_mode = "FAST"
-            elif temp >= 24.0:
-                ac_mode = "SLOW"
-            else:
-                ac_mode = "OFF"
-            print(f"Temp is {temp}C. AC adjusted to {ac_mode}")
+            current_time = time.time()
+            is_room_empty = True
+            
+            # Verify if ANY zone is currently occupied
+            for z in last_motion:
+                if (current_time - last_motion[z]) <= MOTION_TIMEOUT:
+                    is_room_empty = False
+                    break
+            
+            # Only change AC settings if someone is in the room
+            if not is_room_empty:
+                temp = data.get("temp")
+                if temp >= 28.0:
+                    ac_mode = "FAST"
+                elif temp >= 24.0:
+                    ac_mode = "SLOW"
+                else:
+                    ac_mode = "OFF"
+                print(f"Temp is {temp}C. AC adjusted to {ac_mode}")
             
         # 3. Presentation Mode Logic
         elif msg_type == "mode" and data.get("status") == "presentation":
@@ -68,7 +76,7 @@ def on_message(client, userdata, msg):
                     leds[key].off()
                 ac_mode = "SLOW"
             else:
-                print("Presentation Mode OFF. Normal operations resuming.")
+                print("Presentation Mode OFF")
                 
     except json.JSONDecodeError:
         print("Invalid JSON received")
@@ -90,12 +98,22 @@ try:
     while True:
         current_time = time.time()
         
-        # Auto-turn off LEDs if the timeout duration has passed
         if not presentation_mode:
+            is_room_empty = True
+            
+            # Check every zone for a timeout
             for zone in leds:
-                if leds[zone].is_active and (current_time - last_motion[zone] > MOTION_TIMEOUT):
-                    leds[zone].off()
-                    print(f"Zone {zone} empty for {MOTION_TIMEOUT}s. LED OFF.")
+                if current_time - last_motion[zone] > MOTION_TIMEOUT:
+                    if leds[zone].value == 1:
+                        leds[zone].off()
+                        print(f"Zone {zone} empty for {MOTION_TIMEOUT}s. LED OFF.")
+                else:
+                    is_room_empty = False
+
+            # If every zone has timed out, force the AC off
+            if is_room_empty and ac_mode != "OFF":
+                ac_mode = "OFF"
+                print("All zones empty. AC Auto-OFF.")
 
         # Continuous AC Servo Sweeping
         if ac_mode == "OFF":
