@@ -1,4 +1,9 @@
 import mqtt from 'mqtt'
+import {
+  humidityRepository,
+  temperatureRepository,
+  motionRepository,
+} from './config/redisRepository.js'
 
 const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883'
 
@@ -27,12 +32,39 @@ subClient.on('connect', () => {
   })
 })
 
-subClient.on('message', (topic, message) => {
+async function saveToRedis(topic, payload) {
+  const now = new Date()
+  const ts = payload.ts ? new Date(payload.ts) : now
+
+  let saved = false
+  if (payload.temperature !== undefined) {
+    await temperatureRepository.save({ temperature: Number(payload.temperature), timestamp: ts })
+    console.log('[Redis] temperature saved', payload.temperature)
+    saved = true
+  }
+  if (payload.humidity !== undefined) {
+    await humidityRepository.save({ humidity: Number(payload.humidity), timestamp: ts })
+    console.log('[Redis] humidity saved', payload.humidity)
+    saved = true
+  }
+  if (payload.motion !== undefined) {
+    await motionRepository.save({ motion: Boolean(payload.motion), timestamp: ts })
+    console.log('[Redis] motion saved', payload.motion)
+    saved = true
+  }
+
+  if (!saved) {
+    console.warn('[Redis] no matching repository for topic/payload', topic, payload)
+  }
+}
+
+subClient.on('message', async (topic, message) => {
   const text = message.toString()
   console.log(`[MQTT SUB] message: ${topic} -> ${text}`)
   try {
     const parsed = JSON.parse(text)
     console.log('[MQTT SUB] parsed payload', parsed)
+    await saveToRedis(topic, parsed)
   } catch (e) {
     console.warn('[MQTT SUB] non-json payload:', text)
   }
