@@ -36,6 +36,7 @@ async function saveToRedis(topic, payload) {
   const now = new Date()
   const ts = payload.ts ? new Date(payload.ts) : now
 
+  // If payload carries all measurements in one message, save each
   let saved = false
   if (payload.temperature !== undefined) {
     await temperatureRepository.save({ temperature: Number(payload.temperature), timestamp: ts })
