@@ -3,7 +3,7 @@ import json
 import paho.mqtt.client as mqtt
 
 # # --- MQTT SETUP ---
-BROKER_IP = "192.168.137.159"  
+BROKER_IP = "192.168.0.15"  
 BROKER_PORT = 1883
 TOPIC = "test/topic"
 
@@ -32,16 +32,16 @@ TOPIC = "test/topic"
 #     #     # Safely clean up network and pins ONLY upon closing the program
 #     #     mqtt_client.loop_stop()
 #     #     mqtt_client.disconnect()
-client = mqtt.Client(client_id="Publisher", protocol=mqtt.MQTTv5)
+mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
-client.connect(BROKER_IP, BROKER_PORT)
-client.loop_start()
+mqtt_client.connect(BROKER_IP, BROKER_PORT)
+mqtt_client.loop_start()
 
 for i in range(15):
     message = f"Hello MQTT {i}"
-    client.publish(TOPIC, message)
+    mqtt_client.publish(TOPIC, message)
     print(f"Published: {message}")
     time.sleep(1)
 
-client.loop_stop()
-client.disconnect()
+mqtt_client.loop_stop()
+mqtt_client.disconnect()
