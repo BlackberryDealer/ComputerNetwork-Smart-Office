@@ -1,9 +1,13 @@
 import mqtt from 'mqtt'
+import EventEmitter from 'events'
+import redisClient from './config/redis.js'
 import {
   humidityRepository,
   temperatureRepository,
   motionRepository,
 } from './config/redisRepository.js'
+
+export const mqttEvents = new EventEmitter()
 
 const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883'
 
@@ -23,12 +27,12 @@ subClient.on('connect', () => {
   console.log('[MQTT SUB] connected to broker', brokerUrl)
 
   // Accepts all office-related topics
-  subClient.subscribe('office/#', { qos: 0 }, (err) => {
+  subClient.subscribe('smartoffice/#', { qos: 0 }, (err) => {
     if (err) {
       console.error('[MQTT SUB] subscribe error', err)
       return
     }
-    console.log('[MQTT SUB] subscribed to office/#')
+    console.log('[MQTT SUB] subscribed to smartoffice/#')
   })
 })
 
@@ -66,6 +70,9 @@ subClient.on('message', async (topic, message) => {
     const parsed = JSON.parse(text)
     console.log('[MQTT SUB] parsed payload', parsed)
     await saveToRedis(topic, parsed)
+    const update = { topic, payload: parsed, timestamp: new Date().toISOString() }
+    mqttEvents.emit('sensor-update', update)
+    await redisClient.publish('sensor:updates', JSON.stringify(update))
   } catch (e) {
     console.warn('[MQTT SUB] non-json payload:', text)
   }

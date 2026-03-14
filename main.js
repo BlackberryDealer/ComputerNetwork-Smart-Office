@@ -1,29 +1,29 @@
 import express from 'express'
 import 'dotenv/config'
-import { Aedes } from "aedes"
-import net from "net"
+import { createServer } from 'http'
+import { Aedes } from 'aedes'
+import net from 'net'
 import {
   humidityRepository,
   temperatureRepository,
-  motionRepository
+  motionRepository,
 } from './config/redisRepository.js'
-import { publishSensorData } from './mqtt.js'
-
-
-// Temporary test data
+import redisClient from './config/redis.js'
+import { publishSensorData, mqttEvents } from './mqtt.js'
 import { EntityId } from 'redis-om'
+import { Server as SocketIOServer } from 'socket.io'
 
 const app = express()
 
 // MQTT Broker
-const broker = await Aedes.createBroker();
-const mqttPort = 1883;
-
-const mqttServer = net.createServer(broker.handle);
+const broker = await Aedes.createBroker()
+const mqttPort = 1883
+const mqttServer = net.createServer(broker.handle)
 
 mqttServer.listen(mqttPort, () => {
   console.log(`MQTT broker is running on port ${mqttPort}`)
 })
+
 
 broker.on('client', (client) => {
   console.log(`Client connected: ${client.id}`)
@@ -35,14 +35,49 @@ broker.on("publish", (packet, client) => {
   }
 });
 
+const httpServer = createServer(app)
+const io = new SocketIOServer(httpServer)
+
 app.use(express.json())
 app.use(express.urlencoded({ extended: false }))
 
-app.use(express.static('public'));
+app.use(express.static('public'))
 
 app.get('/', (req, res) => {
   res.sendFile('index.html')
 })
+
+io.on('connection', (socket) => {
+  console.log('Socket client connected', socket.id)
+
+  const updateHandler = (data) => {
+    socket.emit('sensor-update', data)
+  }
+
+  mqttEvents.on('sensor-update', updateHandler)
+
+  socket.on('disconnect', () => {
+    mqttEvents.off('sensor-update', updateHandler)
+    console.log('Socket client disconnected', socket.id)
+  })
+})
+
+mqttEvents.on('sensor-update', (data) => {
+  io.emit('sensor-update', data)
+})
+
+// Redis pub/sub stream to socket.io
+const subscriber = redisClient.duplicate()
+await subscriber.connect()
+await subscriber.subscribe('sensor:updates', (msg) => {
+  try {
+    const payload = JSON.parse(msg)
+    io.emit('sensor-update', payload)
+  } catch (e) {
+    console.warn('Invalid Redis stream message', msg)
+  }
+})
+
 
 app.get("/get/:temperature", async (req, res) => {
 
@@ -77,6 +112,7 @@ app.post('/mqtt/publish/:topic', (req, res) => {
   res.json({ status: 'published', topic, payload })
 })
 
-app.listen(3000, () => {
-  console.log('Server is running on http://localhost:3000')
+const port = process.env.PORT || 3000
+httpServer.listen(port, () => {
+  console.log(`Server is running on http://localhost:${port}`)
 })

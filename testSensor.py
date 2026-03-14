@@ -1,11 +1,12 @@
 import time
 import json
 import paho.mqtt.client as mqtt
+import random
 
 # # --- MQTT SETUP ---
 BROKER_IP = "192.168.0.15"  
 BROKER_PORT = 1883
-TOPIC = "test/topic"
+TOPIC = "smartoffice/sensors"
 
 # mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 # # try:
@@ -37,9 +38,14 @@ mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqtt_client.connect(BROKER_IP, BROKER_PORT)
 mqtt_client.loop_start()
 
-for i in range(15):
-    message = f"Hello MQTT {i}"
-    mqtt_client.publish(TOPIC, message)
+for i in range(30):
+    message = f"Sending data number of times: {i}"
+    json_payload = json.dumps({
+        "motion": True,
+        "temperature": random.randint(25, 39),
+        "humidity": random.randint(70, 95)
+    })
+    mqtt_client.publish(TOPIC, json_payload)
     print(f"Published: {message}")
     time.sleep(1)
 

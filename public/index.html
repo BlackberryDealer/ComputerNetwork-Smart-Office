@@ -1,12 +1,52 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Page Title</title>
+  <title>Smart Office Real-Time</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 1rem; background: #f7f8fb; color: #111; }
+    h1 { color: #1f2937; }
+    .box { background: #fff; padding: 1rem; border-radius: 8px; box-shadow: 0 2px 9px rgba(0,0,0,.06); margin-bottom: 0.6rem; }
+    .live { color: #22c55e; font-weight: 700; }
+    .list { font-family: monospace; white-space: pre; background: #0f172a; color: #f8fafc; padding: 1rem; border-radius: 8px; }
+  </style>
 </head>
 <body>
+  <h1>Smart Office - Real-time Sensor Feed</h1>
+  <div class="box">
+    <p>Broker: <strong><span id="broker">connecting...</span></strong></p>
+    <p>MQTT events received: <span id="count">0</span></p>
+    <p class="live">Latest update: <span id="latest">none</span></p>
+  </div>
+  <div class="box">
+    <h3>Recent messages (last 10)</h3>
+    <div id="messages" class="list">No messages yet.</div>
+  </div>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    const socket = io()
+    const broker = document.getElementById('broker')
+    const countEl = document.getElementById('count')
+    const latestEl = document.getElementById('latest')
+    const messagesEl = document.getElementById('messages')
 
-<h1>This is a Heading</h1>
-<p>This is a paragraph.</p>
+    let count = 0
+    const history = []
 
+    socket.on('connect', () => {
+      broker.textContent = 'connected'
+    })
+    socket.on('disconnect', () => {
+      broker.textContent = 'disconnected'
+    })
+
+    socket.on('sensor-update', (data) => {
+      count += 1
+      countEl.textContent = count
+      latestEl.textContent = `${data.topic} ${JSON.stringify(data.payload)}`
+      history.unshift(`${new Date(data.timestamp).toLocaleTimeString()} | ${data.topic} | ${JSON.stringify(data.payload)}`)
+      if (history.length > 10) history.pop()
+      messagesEl.textContent = history.join('\n')
+    })
+  </script>
 </body>
 </html>
