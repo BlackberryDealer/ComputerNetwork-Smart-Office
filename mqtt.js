@@ -1,6 +1,7 @@
 import mqtt from 'mqtt'
 
 const brokerUrl = process.env.MQTT_BROKER_URL
+const topic = 'test/topic'
 
 // Connect to a public test broker
 const client = mqtt.connect(brokerUrl);

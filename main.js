@@ -1,5 +1,7 @@
 import express from 'express'
 import 'dotenv/config'
+import { Aedes } from "aedes"
+import net from "net"
 import { humidityRepository,
   temperatureRepository,
   motionRepository } from './config/redisRepository.js'
@@ -8,6 +10,27 @@ import { humidityRepository,
 import { EntityId } from 'redis-om'
 
 const app = express()
+
+// MQTT Broker
+const broker = await Aedes.createBroker();
+const mqttPort = 1883;
+
+const mqttServer = net.createServer(broker.handle);
+
+mqttServer.listen(mqttPort, () => {
+  console.log(`MQTT broker is running on port ${mqttPort}`)
+})
+
+broker.on('client', (client) => {
+  console.log(`Client connected: ${client.id}`)
+})
+
+broker.on("publish", (packet, client) => {
+  if (client) {
+    console.log(`Message from ${client.id}: ${packet.payload.toString()}`);
+  }
+});
+
 app.use(express.json())
 app.use(express.urlencoded({ extended: false }))
 
