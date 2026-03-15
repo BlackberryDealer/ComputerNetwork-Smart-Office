@@ -67,7 +67,7 @@ No messages yet.</pre>
     const humidityData = { labels: [...labels], datasets: [{ label: 'Humidity (%)', data: Array(maxPoints).fill(null), borderColor: '#0ea5e9', backgroundColor: 'rgba(14,165,233,.2)', fill: true, tension:0.3 }] };
     const motionData = { labels: ['Movement', 'Idle'], datasets: [{ data: [0, 1], backgroundColor: ['#22c55e', '#e5e7eb'], borderColor: ['#16a34a', '#9ca3af'], borderWidth: 1 }] };
 
-    const commonOpts = { responsive: true, animation: false, plugins: { legend: { display: true } }, scales: { x: { display: false }, y: { beginAtZero: true } } };
+    const commonOpts = { responsive: true, animation: false, plugins: { legend: { display: true } }, scales: { x: { display: true, title: { display: true, text: 'Time' } }, y: { beginAtZero: true } } };
 
     const tempChart = new Chart(document.getElementById('temperatureChart'), { type: 'line', data: temperatureData, options: commonOpts });
     const humidityChart = new Chart(document.getElementById('humidityChart'), { type: 'line', data: humidityData, options: commonOpts });
