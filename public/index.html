@@ -108,7 +108,7 @@ No messages yet.</pre>
       count += 1;
       countEl.textContent = count;
       const ts = new Date(data.timestamp);
-      const tsLabel = `${ts.toLocaleTimeString()}`;
+      const tsLabel = `${ts.toISOString()}`;
       latestEl.textContent = `${tsLabel} ${data.topic}`;
 
       const payload = data.payload || {};
@@ -120,7 +120,7 @@ No messages yet.</pre>
 
       history.unshift(`${tsLabel} | ${data.topic} | ${JSON.stringify(payload)}`);
       if (history.length > 30) history.pop();
-      messagesEl.textContent = `Time       | Topic               | Payload\n${history.join('\n')}`;
+      messagesEl.textContent = `Time                     | Topic               | Payload\n${history.join('\n')}`;
     });
   </script>
 </body>
