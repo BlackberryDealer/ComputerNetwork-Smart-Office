@@ -1,46 +1,101 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <title>Smart Office Real-Time</title>
-  <link rel="stylesheet" href="css/main.css">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 1rem; background: #f3f4f6; color: #111827; }
+    h1 { margin-bottom: 0.2rem; }
+    .header { display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; }
+    .box { background: #fff; border-radius: 0.5rem; padding: 0.8rem; margin-bottom: 0.8rem; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); gap: 0.8rem; }
+    .small { font-size: 0.9rem; color: #4b5563; }
+    pre { background: #111827; color: #f9fafb; border-radius: 0.5rem; padding: 0.7rem; overflow:auto; max-height: 260px; }
+  </style>
 </head>
+
 <body>
-  <h1>Smart Office - Real-time Sensor Feed</h1>
-  <div class="box">
-    <p>Broker: <strong><span id="broker">connecting...</span></strong></p>
-    <p>MQTT events received: <span id="count">0</span></p>
-    <p class="live">Latest update: <span id="latest">none</span></p>
+  <h1>Smart Office Real-time Dashboard</h1>
+  <div class="header">
+    <div class="box" style="flex:1;">
+      <div>Broker status: <strong id="broker">Connecting...</strong></div>
+      <div>Event count: <strong id="count">0</strong></div>
+      <div class="small">Latest: <span id="latest">none</span></div>
+    </div>
   </div>
-  <div class="box">
-    <h3>Recent messages (last 30)</h3>
-    <div id="messages" class="list">No messages yet.</div>
+
+  <div class="grid">
+    <div class="box">
+      <h3>Temperature (°C)</h3>
+      <canvas id="temperatureChart"></canvas>
+    </div>
+    <div class="box">
+      <h3>Humidity (%)</h3>
+      <canvas id="humidityChart"></canvas>
+    </div>
+    <div class="box">
+      <h3>Motion</h3>
+      <canvas id="motionChart"></canvas>
+    </div>
   </div>
-  <script src="js/socket-io.js"></script>
+
+  <div class="box">
+    <h3>Recent events</h3>
+    <pre id="messages">No messages yet.</pre>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
-    const socket = io()
-    const broker = document.getElementById('broker')
-    const countEl = document.getElementById('count')
-    const latestEl = document.getElementById('latest')
-    const messagesEl = document.getElementById('messages')
+    const socket = io();
+    const broker = document.getElementById('broker');
+    const countEl = document.getElementById('count');
+    const latestEl = document.getElementById('latest');
+    const messagesEl = document.getElementById('messages');
 
-    let count = 0
-    const history = []
+    let count = 0;
+    const history = [];
+    const maxPoints = 30;
 
-    socket.on('connect', () => {
-      broker.textContent = 'connected'
-    })
-    socket.on('disconnect', () => {
-      broker.textContent = 'disconnected'
-    })
+    const labels = Array.from({ length: maxPoints }, () => '');
+    const temperatureData = { labels: [...labels], datasets: [{ label: 'Temperature (°C)', data: Array(maxPoints).fill(null), borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,.2)', fill: true, tension:0.3 }] };
+    const humidityData = { labels: [...labels], datasets: [{ label: 'Humidity (%)', data: Array(maxPoints).fill(null), borderColor: '#0ea5e9', backgroundColor: 'rgba(14,165,233,.2)', fill: true, tension:0.3 }] };
+    const motionData = { labels: [...labels], datasets: [{ label: 'motion', data: Array(maxPoints).fill(null), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,.2)', fill: true, tension:0.3 }] };
+
+    const commonOpts = { responsive: true, animation: false, plugins: { legend: { display: true } }, scales: { x: { display: false }, y: { beginAtZero: true } } };
+
+    const tempChart = new Chart(document.getElementById('temperatureChart'), { type: 'line', data: temperatureData, options: commonOpts });
+    const humidityChart = new Chart(document.getElementById('humidityChart'), { type: 'line', data: humidityData, options: commonOpts });
+    const motionChart = new Chart(document.getElementById('motionChart'), { type: 'line', data: motionData, options: { ...commonOpts, scales: { ...commonOpts.scales, y: { beginAtZero: true, max: 1.5 } } } });
+
+    function pushPoint(chart, value, label) {
+      chart.data.labels.push(label);
+      chart.data.labels.shift();
+      chart.data.datasets[0].data.push(value);
+      chart.data.datasets[0].data.shift();
+      chart.update('none');
+    }
+
+    socket.on('connect', () => { broker.textContent = 'Connected'; });
+    socket.on('disconnect', () => { broker.textContent = 'Disconnected'; });
 
     socket.on('sensor-update', (data) => {
-      count += 1
-      countEl.textContent = count
-      latestEl.textContent = `${data.topic} ${JSON.stringify(data.payload)}`
-      history.unshift(`${new Date(data.timestamp).toISOString()} | ${data.topic} | ${JSON.stringify(data.payload)}`)
-      if (history.length > 30) history.pop()
-      messagesEl.textContent = history.join('\n')
-    })
+      count += 1;
+      countEl.textContent = count;
+      const ts = new Date(data.timestamp);
+      const tsLabel = `${ts.toLocaleTimeString()}.${String(ts.getMilliseconds()).padStart(3,'0')}`;
+      latestEl.textContent = `${tsLabel} ${data.topic}`;
+
+      const payload = data.payload || {};
+      if (payload.temperature !== undefined) pushPoint(tempChart, Number(payload.temperature), tsLabel);
+      if (payload.humidity !== undefined) pushPoint(humidityChart, Number(payload.humidity), tsLabel);
+      if (payload.motion !== undefined) pushPoint(motionChart, Number(payload.motion), tsLabel);
+
+      history.unshift(`${tsLabel} | ${data.topic} | ${JSON.stringify(payload)}`);
+      if (history.length > 30) history.pop();
+      messagesEl.textContent = history.join('\n');
+    });
   </script>
 </body>
+
 </html>
