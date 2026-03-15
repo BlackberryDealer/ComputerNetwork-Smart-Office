@@ -10,6 +10,8 @@
     .box { background: #fff; border-radius: 0.5rem; padding: 0.8rem; margin-bottom: 0.8rem; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
     .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); gap: 0.8rem; }
     .small { font-size: 0.9rem; color: #4b5563; }
+    .motion-wrapper { display:flex; justify-content:center; margin-top:0.4rem; }
+    .motion-chart { max-width:350px; max-height:350px; width:100%; height:100%; }
     pre { background: #111827; color: #f9fafb; border-radius: 0.5rem; padding: 0.7rem; overflow:auto; max-height: 260px; }
   </style>
 </head>
@@ -39,7 +41,7 @@
         <div id="motionLabel">Movement: 0%</div>
         <div id="motionCount" class="small">0 / 0</div>
       </div>
-      <canvas id="motionChart"></canvas>
+      <div class="motion-wrapper"><canvas id="motionChart" class="motion-chart"></canvas></div>
     </div>
   </div>
 
@@ -71,7 +73,7 @@ No messages yet.</pre>
 
     const tempChart = new Chart(document.getElementById('temperatureChart'), { type: 'line', data: temperatureData, options: commonOpts });
     const humidityChart = new Chart(document.getElementById('humidityChart'), { type: 'line', data: humidityData, options: commonOpts });
-    const motionChart = new Chart(document.getElementById('motionChart'), { type: 'pie', data: motionData, options: { responsive: true, animation: false, plugins: { legend: { position: 'bottom' } } } });
+    const motionChart = new Chart(document.getElementById('motionChart'), { type: 'pie', data: motionData, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom' } } } });
 
     const oneMinuteEvents = [];
     function pushPoint(chart, value, label) {
