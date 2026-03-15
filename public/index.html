@@ -20,7 +20,7 @@
     <div class="box" style="flex:1;">
       <div>Broker status: <strong id="broker">Connecting...</strong></div>
       <div>Event count: <strong id="count">0</strong></div>
-      <div class="small">Latest: <span id="latest">none</span></div>
+      <div class="small">Latest: <span id="latest">None</span></div>
     </div>
   </div>
 
@@ -34,13 +34,17 @@
       <canvas id="humidityChart"></canvas>
     </div>
     <div class="box">
-      <h3>Motion</h3>
+      <h3>Motion (% in last minute)</h3>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.2rem;">
+        <div id="motionLabel">Movement: 0%</div>
+        <div id="motionCount" class="small">0 / 0</div>
+      </div>
       <canvas id="motionChart"></canvas>
     </div>
   </div>
 
   <div class="box">
-    <h3>Recent events</h3>
+    <h3>Recent Events</h3>
     <pre id="messages">No messages yet.</pre>
   </div>
 
@@ -60,20 +64,40 @@
     const labels = Array.from({ length: maxPoints }, () => '');
     const temperatureData = { labels: [...labels], datasets: [{ label: 'Temperature (°C)', data: Array(maxPoints).fill(null), borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,.2)', fill: true, tension:0.3 }] };
     const humidityData = { labels: [...labels], datasets: [{ label: 'Humidity (%)', data: Array(maxPoints).fill(null), borderColor: '#0ea5e9', backgroundColor: 'rgba(14,165,233,.2)', fill: true, tension:0.3 }] };
-    const motionData = { labels: [...labels], datasets: [{ label: 'motion', data: Array(maxPoints).fill(null), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,.2)', fill: true, tension:0.3 }] };
+    const motionData = { labels: ['Movement', 'Idle'], datasets: [{ data: [0, 1], backgroundColor: ['#22c55e', '#e5e7eb'], borderColor: ['#16a34a', '#9ca3af'], borderWidth: 1 }] };
 
     const commonOpts = { responsive: true, animation: false, plugins: { legend: { display: true } }, scales: { x: { display: false }, y: { beginAtZero: true } } };
 
     const tempChart = new Chart(document.getElementById('temperatureChart'), { type: 'line', data: temperatureData, options: commonOpts });
     const humidityChart = new Chart(document.getElementById('humidityChart'), { type: 'line', data: humidityData, options: commonOpts });
-    const motionChart = new Chart(document.getElementById('motionChart'), { type: 'line', data: motionData, options: { ...commonOpts, scales: { ...commonOpts.scales, y: { beginAtZero: true, max: 1.5 } } } });
+    const motionChart = new Chart(document.getElementById('motionChart'), { type: 'pie', data: motionData, options: { responsive: true, animation: false, plugins: { legend: { position: 'bottom' } } } });
 
+    const oneMinuteEvents = [];
     function pushPoint(chart, value, label) {
       chart.data.labels.push(label);
       chart.data.labels.shift();
       chart.data.datasets[0].data.push(value);
       chart.data.datasets[0].data.shift();
       chart.update('none');
+    }
+
+    function updateMotionPie(motion) {
+      const now = Date.now();
+      oneMinuteEvents.push({ t: now, motion: motion ? 1 : 0 });
+      // keep only last 60 seconds
+      const minAgo = now - 60_000;
+      while (oneMinuteEvents.length && oneMinuteEvents[0].t < minAgo) {
+        oneMinuteEvents.shift();
+      }
+      const movementCount = oneMinuteEvents.reduce((acc, e) => acc + e.motion, 0);
+      const total = oneMinuteEvents.length || 1;
+      const idle = total - movementCount;
+      motionChart.data.datasets[0].data = [movementCount, idle];
+      motionChart.update();
+
+      const percent = Math.round((movementCount / total) * 100);
+      document.getElementById('motionLabel').textContent = `Movement: ${percent}% (last 60s)`;
+      document.getElementById('motionCount').textContent = `${movementCount} / ${total}`;
     }
 
     socket.on('connect', () => { broker.textContent = 'Connected'; });
@@ -89,7 +113,9 @@
       const payload = data.payload || {};
       if (payload.temperature !== undefined) pushPoint(tempChart, Number(payload.temperature), tsLabel);
       if (payload.humidity !== undefined) pushPoint(humidityChart, Number(payload.humidity), tsLabel);
-      if (payload.motion !== undefined) pushPoint(motionChart, Number(payload.motion), tsLabel);
+      if (payload.motion !== undefined) {
+        updateMotionPie(Number(payload.motion));
+      }
 
       history.unshift(`${tsLabel} | ${data.topic} | ${JSON.stringify(payload)}`);
       if (history.length > 30) history.pop();
