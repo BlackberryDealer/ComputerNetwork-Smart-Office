@@ -3,6 +3,7 @@ import redisClient from "./redis.js";
 import humiditySchema from "../models/humidity.js";
 import temperatureSchema from "../models/temperature.js";
 import motionSchema from "../models/motion.js";
+import nodeBEventSchema from "../models/nodeBEvent.js";
 
 // Workaround for Redis error string differences: 'no such index' vs 'Unknown index name'
 const originalDropIndex = Repository.prototype.dropIndex;
@@ -21,6 +22,7 @@ Repository.prototype.dropIndex = async function() {
 const humidityRepository = new Repository(humiditySchema, redisClient);
 const temperatureRepository = new Repository(temperatureSchema, redisClient);
 const motionRepository = new Repository(motionSchema, redisClient);
+const nodeBEventRepository = new Repository(nodeBEventSchema, redisClient);
 
 async function ensureRepositoryIndex(repository, name) {
     try {
@@ -34,5 +36,6 @@ async function ensureRepositoryIndex(repository, name) {
 await ensureRepositoryIndex(humidityRepository, 'humidity');
 await ensureRepositoryIndex(temperatureRepository, 'temperature');
 await ensureRepositoryIndex(motionRepository, 'motion');
+await ensureRepositoryIndex(nodeBEventRepository, 'nodeBEvent');
 
-export { humidityRepository, temperatureRepository, motionRepository };
+export { humidityRepository, temperatureRepository, motionRepository, nodeBEventRepository };

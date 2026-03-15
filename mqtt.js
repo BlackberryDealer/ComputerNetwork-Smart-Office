@@ -5,6 +5,7 @@ import {
   humidityRepository,
   temperatureRepository,
   motionRepository,
+  nodeBEventRepository,
 } from './config/redisRepository.js'
 
 const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883'
@@ -24,13 +25,14 @@ const subClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: `node-s
 subClient.on('connect', () => {
   console.log('[MQTT SUB] connected to broker', brokerUrl)
 
-  // Accepts all office-related topics
-  subClient.subscribe('smartoffice/#', { qos: 0 }, (err) => {
+  // Subscribe to Node B topics and smartoffice namespace
+  const topics = ['smartoffice/sensors', 'smartoffice/#', 'redis/#', 'node_b/#']
+  subClient.subscribe(topics, { qos: 0 }, (err, granted) => {
     if (err) {
       console.error('[MQTT SUB] subscribe error', err)
       return
     }
-    console.log('[MQTT SUB] subscribed to smartoffice/#')
+    console.log('[MQTT SUB] subscribed to', granted.map((g) => g.topic).join(', '))
   })
 })
 
@@ -38,8 +40,9 @@ async function saveToRedis(topic, payload) {
   const now = new Date()
   const ts = payload.ts ? new Date(payload.ts) : now
 
-  // If payload carries all measurements in one message, save each
   let saved = false
+
+  // Save standard sensor values
   if (payload.temperature !== undefined) {
     await temperatureRepository.save({ temperature: Number(payload.temperature), timestamp: ts })
     console.log('[Redis] temperature saved', payload.temperature)
@@ -53,6 +56,25 @@ async function saveToRedis(topic, payload) {
   if (payload.motion !== undefined) {
     await motionRepository.save({ motion: Boolean(payload.motion), timestamp: ts })
     console.log('[Redis] motion saved', payload.motion)
+    saved = true
+  }
+
+  // Save Node B event payloads for any smartoffice/sensors messages
+  if (topic.startsWith('smartoffice/') || topic.startsWith('node_b/')) {
+    const zone = payload.zone !== undefined ? Number(payload.zone) : undefined
+    const temp = payload.temp !== undefined ? Number(payload.temp) : undefined
+    const status = payload.status ? String(payload.status) : undefined
+    const type = payload.type ? String(payload.type) : 'unknown'
+
+    await nodeBEventRepository.save({
+      type,
+      zone,
+      temp,
+      status,
+      message: JSON.stringify(payload),
+      timestamp: ts,
+    })
+    console.log('[Redis] nodeBEvent saved', { type, zone, temp, status })
     saved = true
   }
 
