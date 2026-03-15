@@ -97,6 +97,44 @@ export function publishSensorData(topic, payload) {
   })
 }
 
+async function getLatestFromRepo(repository, fieldName) {
+  // Get newest entry by timestamp
+  const results = await repository.search().sortBy('timestamp', 'DESC').returnAll()
+  if (!results || results.length === 0) return null
+  return { value: results[0][fieldName], timestamp: results[0].timestamp }
+}
+
+export async function publishFromRedis() {
+  try {
+    const temp = await getLatestFromRepo(temperatureRepository, 'temperature')
+    const humidity = await getLatestFromRepo(humidityRepository, 'humidity')
+    const motion = await getLatestFromRepo(motionRepository, 'motion')
+
+    if (temp) {
+      publishSensorData('redis/temperature', { type: 'temperature', temperature: Number(temp.value), ts: temp.timestamp })
+    }
+    if (humidity) {
+      publishSensorData('redis/humidity', { type: 'humidity', humidity: Number(humidity.value), ts: humidity.timestamp })
+    }
+    if (motion) {
+      publishSensorData('redis/motion', { type: 'motion', motion: Boolean(motion.value), ts: motion.timestamp })
+    }
+
+    if (!temp && !humidity && !motion) {
+      console.log('[MQTT PUB] no Redis data yet to publish')
+    }
+  } catch (error) {
+    console.error('[MQTT PUB] error publishing from Redis', error)
+  }
+}
+
+// Periodically publish latest Redis data to devices on network
+setInterval(() => {
+  publishFromRedis().catch((err) => {
+    console.error('[MQTT PUB] periodic publish error', err)
+  })
+}, 1000)
+
 // Optional test periodic publishing
 // setInterval(() => {
 //   publishSensorData('office/temperature', {
