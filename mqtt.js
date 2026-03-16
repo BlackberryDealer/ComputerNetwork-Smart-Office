@@ -43,9 +43,10 @@ async function saveToRedis(topic, payload) {
   let saved = false
 
   // Save standard sensor values
-  if (payload.temperature !== undefined) {
-    await temperatureRepository.save({ temperature: Number(payload.temperature), timestamp: ts })
-    console.log('[Redis] temperature saved', payload.temperature)
+  if (payload.temperature !== undefined || payload.temp !== undefined) {
+    const tempValue = payload.temperature !== undefined ? payload.temperature : payload.temp
+    await temperatureRepository.save({ temperature: Number(tempValue), timestamp: ts })
+    console.log('[Redis] temperature saved', tempValue)
     saved = true
   }
   if (payload.humidity !== undefined) {
@@ -53,9 +54,14 @@ async function saveToRedis(topic, payload) {
     console.log('[Redis] humidity saved', payload.humidity)
     saved = true
   }
-  if (payload.motion !== undefined) {
-    await motionRepository.save({ motion: Boolean(payload.motion), timestamp: ts })
-    console.log('[Redis] motion saved', payload.motion)
+  if (payload.type === "periodic_motion" && payload.states) {
+    await motionRepository.save({
+      zone1: Boolean(payload.states.zone_1),
+      zone2: Boolean(payload.states.zone_2),
+      zone3: Boolean(payload.states.zone_3),
+      timestamp: ts
+    })
+    console.log('[Redis] motion saved', payload.states)
     saved = true
   }
 
@@ -123,14 +129,19 @@ async function getLatestFromRepo(repository, fieldName) {
   // Get newest entry by timestamp
   const results = await repository.search().sortBy('timestamp', 'DESC').returnAll()
   if (!results || results.length === 0) return null
-  return { value: results[0][fieldName], timestamp: results[0].timestamp }
+  const latest = results[0]
+  if (fieldName) {
+    return { value: latest[fieldName], timestamp: latest.timestamp }
+  } else {
+    return latest
+  }
 }
 
 export async function publishFromRedis() {
   try {
     const temp = await getLatestFromRepo(temperatureRepository, 'temperature')
     const humidity = await getLatestFromRepo(humidityRepository, 'humidity')
-    const motion = await getLatestFromRepo(motionRepository, 'motion')
+    const latestMotion = await getLatestFromRepo(motionRepository)
 
     if (temp) {
       publishSensorData('redis/temperature', { type: 'temperature', temperature: Number(temp.value), ts: temp.timestamp })
@@ -138,11 +149,11 @@ export async function publishFromRedis() {
     if (humidity) {
       publishSensorData('redis/humidity', { type: 'humidity', humidity: Number(humidity.value), ts: humidity.timestamp })
     }
-    if (motion) {
-      publishSensorData('redis/motion', { type: 'motion', motion: Boolean(motion.value), ts: motion.timestamp })
+    if (latestMotion) {
+      publishSensorData('redis/motion', { type: 'periodic_motion', states: { zone_1: latestMotion.zone1, zone_2: latestMotion.zone2, zone_3: latestMotion.zone3 }, ts: latestMotion.timestamp })
     }
 
-    if (!temp && !humidity && !motion) {
+    if (!temp && !humidity && !latestMotion) {
       console.log('[MQTT PUB] no Redis data yet to publish')
     }
   } catch (error) {
