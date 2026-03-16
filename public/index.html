@@ -133,24 +133,31 @@ No messages yet.</pre>
     socket.on('disconnect', () => { broker.textContent = 'Disconnected'; });
 
     socket.on('sensor-update', (data) => {
-      count += 1;
-      countEl.textContent = count;
-      const ts = new Date(data.timestamp);
-      const tsLabel = `${ts.toISOString()}`;
-      latestEl.textContent = `${tsLabel} ${data.topic}`;
+      const isInitial = data.topic.startsWith('initial/');
+      if (!isInitial) {
+        count += 1;
+        countEl.textContent = count;
+        const ts = new Date(data.timestamp);
+        const tsLabel = `${ts.toISOString()}`;
+        latestEl.textContent = `${tsLabel} ${data.topic}`;
+      }
 
       const payload = data.payload || {};
-      if (payload.temperature !== undefined) pushPoint(tempChart, Number(payload.temperature), tsLabel);
-      if (payload.humidity !== undefined) pushPoint(humidityChart, Number(payload.humidity), tsLabel);
+      if (payload.temperature !== undefined) pushPoint(tempChart, Number(payload.temperature), isInitial ? '' : new Date(data.timestamp).toISOString());
+      if (payload.humidity !== undefined) pushPoint(humidityChart, Number(payload.humidity), isInitial ? '' : new Date(data.timestamp).toISOString());
       if (payload.type === 'periodic_motion' && payload.states) {
         updateMotionZone(1, payload.states.zone_1);
         updateMotionZone(2, payload.states.zone_2);
         updateMotionZone(3, payload.states.zone_3);
       }
 
-      history.unshift(`${tsLabel} | ${data.topic} | ${JSON.stringify(payload)}`);
-      if (history.length > 30) history.pop();
-      messagesEl.textContent = `Time                     | Topic               | Payload\n${history.join('\n')}`;
+      if (!isInitial) {
+        const ts = new Date(data.timestamp);
+        const tsLabel = `${ts.toISOString()}`;
+        history.unshift(`${tsLabel} | ${data.topic} | ${JSON.stringify(payload)}`);
+        if (history.length > 30) history.pop();
+        messagesEl.textContent = `Time                     | Topic               | Payload\n${history.join('\n')}`;
+      }
     });
   </script>
 </body>

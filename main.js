@@ -48,8 +48,40 @@ app.get('/', (req, res) => {
   res.sendFile('index.html')
 })
 
-io.on('connection', (socket) => {
+// Helper functions to get latest data from Redis
+async function getLatestTemp() {
+  const results = await temperatureRepository.search().sortBy('timestamp', 'DESC').return.first()
+  return results ? { temperature: results.temperature, timestamp: results.timestamp } : null
+}
+
+async function getLatestHumidity() {
+  const results = await humidityRepository.search().sortBy('timestamp', 'DESC').return.first()
+  return results ? { humidity: results.humidity, timestamp: results.timestamp } : null
+}
+
+async function getLatestMotion() {
+  const results = await motionRepository.search().sortBy('timestamp', 'DESC').return.first()
+  return results ? { zone1: results.zone1, zone2: results.zone2, zone3: results.zone3, timestamp: results.timestamp } : null
+}
+
+io.on('connection', async (socket) => {
   console.log('Socket client connected', socket.id)
+
+  // Send initial data from Redis
+  const temp = await getLatestTemp()
+  if (temp) {
+    socket.emit('sensor-update', { topic: 'initial/temp', payload: { temperature: temp.temperature }, timestamp: temp.timestamp })
+  }
+
+  const hum = await getLatestHumidity()
+  if (hum) {
+    socket.emit('sensor-update', { topic: 'initial/humidity', payload: { humidity: hum.humidity }, timestamp: hum.timestamp })
+  }
+
+  const motion = await getLatestMotion()
+  if (motion) {
+    socket.emit('sensor-update', { topic: 'initial/motion', payload: { type: 'periodic_motion', states: { zone_1: motion.zone1, zone_2: motion.zone2, zone_3: motion.zone3 } }, timestamp: motion.timestamp })
+  }
 
   socket.on('disconnect', () => {
     console.log('Socket client disconnected', socket.id)
