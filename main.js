@@ -50,18 +50,18 @@ app.get('/', (req, res) => {
 
 // Helper functions to get latest data from Redis
 async function getLatestTemp() {
-  const results = await temperatureRepository.search().sortBy('timestamp', 'DESC').return.first()
-  return results ? { temperature: results.temperature, timestamp: results.timestamp } : null
+  const results = await temperatureRepository.search().sortBy('timestamp', 'DESC').return.all()
+  return results && results.length > 0 ? { temperature: results[0].temperature, timestamp: results[0].timestamp } : null
 }
 
 async function getLatestHumidity() {
-  const results = await humidityRepository.search().sortBy('timestamp', 'DESC').return.first()
-  return results ? { humidity: results.humidity, timestamp: results.timestamp } : null
+  const results = await humidityRepository.search().sortBy('timestamp', 'DESC').return.all()
+  return results && results.length > 0 ? { humidity: results[0].humidity, timestamp: results[0].timestamp } : null
 }
 
 async function getLatestMotion() {
-  const results = await motionRepository.search().sortBy('timestamp', 'DESC').return.first()
-  return results ? { zone1: results.zone1, zone2: results.zone2, zone3: results.zone3, timestamp: results.timestamp } : null
+  const results = await motionRepository.search().sortBy('timestamp', 'DESC').return.all()
+  return results && results.length > 0 ? { zone1: results[0].zone1, zone2: results[0].zone2, zone3: results[0].zone3, timestamp: results[0].timestamp } : null
 }
 
 io.on('connection', async (socket) => {
