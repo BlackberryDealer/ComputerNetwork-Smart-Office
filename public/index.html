@@ -1,12 +1,158 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-<title>Page Title</title>
+  <title>Smart Office Real-Time</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 1rem; background: #f3f4f6; color: #111827; }
+    h1 { margin-bottom: 0.2rem; }
+    .header { display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; }
+    .box { background: #fff; border-radius: 0.5rem; padding: 0.8rem; margin-bottom: 0.8rem; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); gap: 0.8rem; }
+    .small { font-size: 0.9rem; color: #4b5563; }
+    .motion-wrapper { display:flex; justify-content:center; margin-top:0.4rem; }
+    .motion-chart { max-width:350px; max-height:350px; width:100%; height:100%; }
+    pre { background: #111827; color: #f9fafb; border-radius: 0.5rem; padding: 0.7rem; overflow:auto; max-height: 260px; }
+  </style>
 </head>
+
 <body>
+  <h1>Smart Office Real-time Dashboard</h1>
+  <div class="header">
+    <div class="box" style="flex:1;">
+      <div>Broker status: <strong id="broker">Connecting...</strong></div>
+      <div>Event count: <strong id="count">0</strong></div>
+      <div class="small">Latest: <span id="latest">None</span></div>
+    </div>
+  </div>
 
-<h1>This is a Heading</h1>
-<p>This is a paragraph.</p>
+  <div class="grid">
+    <div class="box">
+      <h3>Temperature (°C)</h3>
+      <canvas id="temperatureChart"></canvas>
+    </div>
+    <div class="box">
+      <h3>Humidity (%)</h3>
+      <canvas id="humidityChart"></canvas>
+    </div>
+    <div class="box">
+      <h3>Motion Zones (% in last minute)</h3>
+      <div class="grid" style="grid-template-columns: repeat(3, 1fr);">
+        <div>
+          <div>Zone 1</div>
+          <div id="motionLabel1">Movement: 0%</div>
+          <div id="motionCount1" class="small">0 / 0</div>
+          <canvas id="motionChart1" class="motion-chart"></canvas>
+        </div>
+        <div>
+          <div>Zone 2</div>
+          <div id="motionLabel2">Movement: 0%</div>
+          <div id="motionCount2" class="small">0 / 0</div>
+          <canvas id="motionChart2" class="motion-chart"></canvas>
+        </div>
+        <div>
+          <div>Zone 3</div>
+          <div id="motionLabel3">Movement: 0%</div>
+          <div id="motionCount3" class="small">0 / 0</div>
+          <canvas id="motionChart3" class="motion-chart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
 
+  <div class="box">
+    <h3>Recent Events</h3>
+    <pre id="messages"><strong>Time                     | Topic              | Payload</strong>
+No messages yet.</pre>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const socket = io();
+    const broker = document.getElementById('broker');
+    const countEl = document.getElementById('count');
+    const latestEl = document.getElementById('latest');
+    const messagesEl = document.getElementById('messages');
+
+    let count = 0;
+    const history = [];
+    const maxPoints = 30;
+
+    const labels = Array.from({ length: maxPoints }, () => '');
+    const temperatureData = { labels: [...labels], datasets: [{ label: 'Temperature (°C)', data: Array(maxPoints).fill(null), borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,.2)', fill: true, tension:0.3 }] };
+    const humidityData = { labels: [...labels], datasets: [{ label: 'Humidity (%)', data: Array(maxPoints).fill(null), borderColor: '#0ea5e9', backgroundColor: 'rgba(14,165,233,.2)', fill: true, tension:0.3 }] };
+    const motionData1 = { labels: ['Movement', 'Idle'], datasets: [{ data: [0, 1], backgroundColor: ['#22c55e', '#e5e7eb'], borderColor: ['#16a34a', '#9ca3af'], borderWidth: 1 }] };
+    const motionData2 = { labels: ['Movement', 'Idle'], datasets: [{ data: [0, 1], backgroundColor: ['#22c55e', '#e5e7eb'], borderColor: ['#16a34a', '#9ca3af'], borderWidth: 1 }] };
+    const motionData3 = { labels: ['Movement', 'Idle'], datasets: [{ data: [0, 1], backgroundColor: ['#22c55e', '#e5e7eb'], borderColor: ['#16a34a', '#9ca3af'], borderWidth: 1 }] };
+
+    const commonOpts = { responsive: true, animation: false, plugins: { legend: { display: true } }, scales: { x: { display: true, title: { display: true, text: 'Time' } }, y: { beginAtZero: true } } };
+
+    const tempChart = new Chart(document.getElementById('temperatureChart'), { type: 'line', data: temperatureData, options: commonOpts });
+    const humidityChart = new Chart(document.getElementById('humidityChart'), { type: 'line', data: humidityData, options: commonOpts });
+    const motionChart1 = new Chart(document.getElementById('motionChart1'), { type: 'pie', data: motionData1, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom' } } } });
+    const motionChart2 = new Chart(document.getElementById('motionChart2'), { type: 'pie', data: motionData2, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom' } } } });
+    const motionChart3 = new Chart(document.getElementById('motionChart3'), { type: 'pie', data: motionData3, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom' } } } });
+
+    const oneMinuteEvents1 = [];
+    const oneMinuteEvents2 = [];
+    const oneMinuteEvents3 = [];
+    function pushPoint(chart, value, label) {
+      chart.data.labels.push(label);
+      chart.data.labels.shift();
+      chart.data.datasets[0].data.push(value);
+      chart.data.datasets[0].data.shift();
+      chart.update('none');
+    }
+
+    function updateMotionZone(zoneIndex, motion) {
+      const oneMinuteEvents = [oneMinuteEvents1, oneMinuteEvents2, oneMinuteEvents3][zoneIndex - 1];
+      const motionChart = [motionChart1, motionChart2, motionChart3][zoneIndex - 1];
+      const motionLabel = document.getElementById(`motionLabel${zoneIndex}`);
+      const motionCount = document.getElementById(`motionCount${zoneIndex}`);
+
+      const now = Date.now();
+      oneMinuteEvents.push({ t: now, motion: motion ? 1 : 0 });
+      // keep only last 60 seconds
+      const minAgo = now - 60_000;
+      while (oneMinuteEvents.length && oneMinuteEvents[0].t < minAgo) {
+        oneMinuteEvents.shift();
+      }
+      const movementCount = oneMinuteEvents.reduce((acc, e) => acc + e.motion, 0);
+      const total = oneMinuteEvents.length || 1;
+      const idle = total - movementCount;
+      motionChart.data.datasets[0].data = [movementCount, idle];
+      motionChart.update();
+
+      const percent = Math.round((movementCount / total) * 100);
+      motionLabel.textContent = `Movement: ${percent}% (last 60s)`;
+      motionCount.textContent = `${movementCount} / ${total}`;
+    }
+
+    socket.on('connect', () => { broker.textContent = 'Connected'; });
+    socket.on('disconnect', () => { broker.textContent = 'Disconnected'; });
+
+    socket.on('sensor-update', (data) => {
+      count += 1;
+      countEl.textContent = count;
+      const ts = new Date(data.timestamp);
+      const tsLabel = `${ts.toISOString()}`;
+      latestEl.textContent = `${tsLabel} ${data.topic}`;
+
+      const payload = data.payload || {};
+      if (payload.temperature !== undefined) pushPoint(tempChart, Number(payload.temperature), tsLabel);
+      if (payload.humidity !== undefined) pushPoint(humidityChart, Number(payload.humidity), tsLabel);
+      if (payload.type === 'periodic_motion' && payload.states) {
+        updateMotionZone(1, payload.states.zone_1);
+        updateMotionZone(2, payload.states.zone_2);
+        updateMotionZone(3, payload.states.zone_3);
+      }
+
+      history.unshift(`${tsLabel} | ${data.topic} | ${JSON.stringify(payload)}`);
+      if (history.length > 30) history.pop();
+      messagesEl.textContent = `Time                     | Topic               | Payload\n${history.join('\n')}`;
+    });
+  </script>
 </body>
+
 </html>

@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 import json
 import paho.mqtt.client as mqtt
 from gpiozero import MotionSensor, Button
@@ -6,7 +7,7 @@ import RPi.GPIO as GPIO
 from dht11 import DHT11
 
 # --- MQTT SETUP ---
-BROKER_IP = "[IP_ADDRESS]"
+BROKER_IP = "127.0.0.1"
 BROKER_PORT = 1883
 TOPIC = "smartoffice/sensors"
 
@@ -39,51 +40,60 @@ GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 dht_sensor = DHT11(pin=4)  # Ensure this matches your physical wiring
 
-# --- EVENT HANDLERS ---
-last_triggered = {1: 0, 2: 0, 3: 0}
-COOLDOWN_SECONDS = 5
-
-def motion_handler(zone):
-    now = time.time()
-    if now - last_triggered[zone] > COOLDOWN_SECONDS:
-        last_triggered[zone] = now
-        print(f"Motion detected in Zone {zone}!")
-        publish_data({"type": "motion", "zone": zone, "status": "occupied"})
-
+# --- INSTANT EVENT HANDLERS ---
+# The presentation button still acts instantly
 def touch_handler():
+    timestamp = datetime.now().isoformat()
     print("Presentation mode activated!")
-    publish_data({"type": "mode", "status": "presentation"})
+    publish_data({"type": "mode", "status": "presentation", "timestamp": timestamp})
 
-pir_zone1.when_motion = lambda: motion_handler(1)
-pir_zone2.when_motion = lambda: motion_handler(2)
-pir_zone3.when_motion = lambda: motion_handler(3)
 touch_sensor.when_pressed = touch_handler
+# --- MAIN PERIODIC LOOP ---
+last_dht_read = 0  # Tracker for the 5-second DHT delay
 
-# --- MAIN LOOP ---
 try:
     while True:
-        # Read DHT11
-        result = dht_sensor.read()
-        if result.is_valid():
-            temp = result.temperature
-            humidity = result.humidity
-            print(f"Temp: {temp:.1f}°C, Humidity: {humidity:.1f}%")
+        current_time = datetime.now().isoformat()
 
-            publish_data({
-                "type": "climate",
-                "temp": temp,
-                "humidity": humidity
-            })
-        else:
-            print("Failed to read DHT11 sensor, retrying...")
+        # 1. MOTION SENSORS (Reads fast, every 2 seconds)
+        motion_status = {
+            "zone_1": bool(pir_zone1.value),
+            "zone_2": bool(pir_zone2.value),
+            "zone_3": bool(pir_zone3.value)
+        }
 
-        # Wait 2 seconds before polling again
+        publish_data({
+            "type": "periodic_motion",
+            "states": motion_status,
+            "timestamp": current_time
+        })
+
+        # 2. DHT11 SENSOR (Reads slowly, only every 5 seconds)
+        if time.time() - last_dht_read >= 5.0:
+            result = dht_sensor.read()
+            last_dht_read = time.time() # Reset the timer
+
+            if result.is_valid():
+                temp = result.temperature
+                humidity = result.humidity
+                print(f"Temp: {temp:.1f}°C, Humidity: {humidity:.1f}% | Motion: Z1={motion_status['zone_1']} Z2={motion_status['zone_2']} Z3={motion_status['zone_3']}")
+
+                publish_data({
+                    "type": "climate",
+                    "temp": temp,
+                    "humidity": humidity,
+                    "timestamp": current_time
+                })
+            else:
+                # Silently fail so it doesn't spam the console, it will just try again in 5 seconds
+                print(f"DHT11 read failed. Retrying in 5s... | Motion: Z1={motion_status['zone_1']} Z2={motion_status['zone_2']} Z3={motion_status['zone_3']}")
+
+        # Keep the fast loop running every 2 seconds for the motion sensors
         time.sleep(2)
 
 except KeyboardInterrupt:
     print("\nExiting gracefully.")
 finally:
-    # Safely clean up network and pins ONLY upon closing the program
     mqtt_client.loop_stop()
     mqtt_client.disconnect()
     GPIO.cleanup()
