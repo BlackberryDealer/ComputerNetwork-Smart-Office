@@ -143,8 +143,24 @@ No messages yet.</pre>
       }
 
       const payload = data.payload || {};
-      if (payload.temperature !== undefined) pushPoint(tempChart, Number(payload.temperature), isInitial ? '' : new Date(data.timestamp).toISOString());
-      if (payload.humidity !== undefined) pushPoint(humidityChart, Number(payload.humidity), isInitial ? '' : new Date(data.timestamp).toISOString());
+      if (payload.temperature !== undefined) {
+        if (isInitial) {
+          tempChart.data.datasets[0].data[29] = Number(payload.temperature);
+          tempChart.data.labels[29] = new Date(data.timestamp).toISOString();
+          tempChart.update('none');
+        } else {
+          pushPoint(tempChart, Number(payload.temperature), new Date(data.timestamp).toISOString());
+        }
+      }
+      if (payload.humidity !== undefined) {
+        if (isInitial) {
+          humidityChart.data.datasets[0].data[29] = Number(payload.humidity);
+          humidityChart.data.labels[29] = new Date(data.timestamp).toISOString();
+          humidityChart.update('none');
+        } else {
+          pushPoint(humidityChart, Number(payload.humidity), new Date(data.timestamp).toISOString());
+        }
+      }
       if (payload.type === 'periodic_motion' && payload.states) {
         updateMotionZone(1, payload.states.zone_1);
         updateMotionZone(2, payload.states.zone_2);
