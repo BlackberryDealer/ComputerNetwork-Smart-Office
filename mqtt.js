@@ -153,6 +153,17 @@ export async function publishFromRedis() {
       publishSensorData('redis/motion', { type: 'periodic_motion', states: { zone_1: latestMotion.zone1, zone_2: latestMotion.zone2, zone_3: latestMotion.zone3 }, ts: latestMotion.timestamp })
     }
 
+    // Publish commands to node_b based on sensor data
+    if (temp) {
+      const command = temp.value > 25 ? 'FAST' : 'OFF';
+      publishSensorData('office/commands/node_b', { device_id: 'AC', command });
+    }
+    if (latestMotion) {
+      publishSensorData('office/commands/node_b', { device_id: 'LED_1', command: latestMotion.zone1 ? 'ON' : 'OFF' });
+      publishSensorData('office/commands/node_b', { device_id: 'LED_2', command: latestMotion.zone2 ? 'ON' : 'OFF' });
+      publishSensorData('office/commands/node_b', { device_id: 'LED_3', command: latestMotion.zone3 ? 'ON' : 'OFF' });
+    }
+
     if (!temp && !humidity && !latestMotion) {
       console.log('[MQTT PUB] no Redis data yet to publish')
     }
