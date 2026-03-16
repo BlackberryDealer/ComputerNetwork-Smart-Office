@@ -1,8 +1,8 @@
 import { Schema } from "redis-om";
 
 const motionSchema = new Schema('motion', {
-    motion: { type: 'number' },
-    timestamp: { type: 'boolean' }
+    motion: { type: 'boolean' },
+    timestamp: { type: 'date', sortable: true }
 })
 
 export default motionSchema;
