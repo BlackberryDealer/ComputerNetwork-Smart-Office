@@ -166,8 +166,10 @@ subClient.on('message', async (topic, message) => {
   try {
     const parsed = JSON.parse(text)
     
-    // Evaluate rules immediately upon receiving data
-    evaluateSmartRules(parsed);
+    // Evaluate rules only for real sensor data, not our own Redis replays
+    if (!topic.startsWith('redis/')) {
+      evaluateSmartRules(parsed);
+    }
 
     await saveToRedis(topic, parsed)
     const update = { topic, payload: parsed, timestamp: new Date().toISOString() }
