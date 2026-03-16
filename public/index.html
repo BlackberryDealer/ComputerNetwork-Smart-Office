@@ -37,24 +37,24 @@
     </div>
     <div class="box">
       <h3>Motion Zones (% in last minute)</h3>
-      <div class="grid" style="grid-template-columns: repeat(3, 1fr);">
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
         <div>
           <div>Zone 1</div>
           <div id="motionLabel1">Movement: 0%</div>
           <div id="motionCount1" class="small">0 / 0</div>
-          <canvas id="motionChart1" class="motion-chart"></canvas>
+          <div class="motion-wrapper"><canvas id="motionChart1" width="200" height="200" class="motion-chart"></canvas></div>
         </div>
         <div>
           <div>Zone 2</div>
           <div id="motionLabel2">Movement: 0%</div>
           <div id="motionCount2" class="small">0 / 0</div>
-          <canvas id="motionChart2" class="motion-chart"></canvas>
+          <div class="motion-wrapper"><canvas id="motionChart2" width="200" height="200" class="motion-chart"></canvas></div>
         </div>
         <div>
           <div>Zone 3</div>
           <div id="motionLabel3">Movement: 0%</div>
           <div id="motionCount3" class="small">0 / 0</div>
-          <canvas id="motionChart3" class="motion-chart"></canvas>
+          <div class="motion-wrapper"><canvas id="motionChart3" width="200" height="200" class="motion-chart"></canvas></div>
         </div>
       </div>
     </div>
