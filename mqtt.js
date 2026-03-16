@@ -23,12 +23,12 @@ const subClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: `node-s
 // --- SMART OFFICE DECISION ENGINE ---
 const COMMAND_TOPIC = 'office/commands/node_b';
 const activeZones = { 1: null, 2: null, 3: null };
-const MOTION_TIMEOUT = 7000; // 7 seconds timeout
+const MOTION_TIMEOUT = 5000; // 5 seconds timeout for LEDs
 let currentTemp = 24.0;
 let presentationMode = false;
 
 function evaluateSmartRules(payload) {
-  // 1. Presentation Mode Check
+  // 1. Presentation Mode Logic
   if (payload.type === 'mode' && payload.status === 'presentation') {
     presentationMode = !presentationMode;
     if (presentationMode) {
@@ -39,27 +39,27 @@ function evaluateSmartRules(payload) {
       publishSensorData(COMMAND_TOPIC, { device_id: 'AC', command: 'SLOW' });
     } else {
       console.log('[Smart Logic] Presentation Mode OFF. Resuming auto-sensors.');
+      updateAC(); // Re-evaluate AC based on current temp and occupancy
     }
     return;
   }
 
   if (presentationMode) return; // Ignore auto-sensors while presenting
 
-  // 2. Motion Detected Logic
+  // 2. Motion Logic (5-second timeout)
   if (payload.type === 'periodic_motion' && payload.states) {
     let roomJustOccupied = false;
 
-    // Iterate through zones 1, 2, and 3
     for (let i = 1; i <= 3; i++) {
       const isMotion = payload.states[`zone_${i}`];
       if (isMotion) {
         roomJustOccupied = true;
         publishSensorData(COMMAND_TOPIC, { device_id: `LED_${i}`, command: 'ON' });
         
-        // Clear existing timer and start a new 7-second countdown
+        // Clear existing timer and start a new 5-second countdown
         if (activeZones[i]) clearTimeout(activeZones[i]);
         activeZones[i] = setTimeout(() => {
-          console.log(`[Smart Logic] Zone ${i} empty for 7s. Turning OFF.`);
+          console.log(`[Smart Logic] Zone ${i} empty for 5s. Turning OFF.`);
           publishSensorData(COMMAND_TOPIC, { device_id: `LED_${i}`, command: 'OFF' });
           activeZones[i] = null; 
           checkOverallOccupancy();
@@ -69,7 +69,7 @@ function evaluateSmartRules(payload) {
     if (roomJustOccupied) updateAC();
   }
 
-  // 3. Climate Update Logic
+  // 3. Climate Logic Update
   if (payload.type === 'climate' && payload.temp !== undefined) {
     currentTemp = payload.temp;
     updateAC();
@@ -86,13 +86,12 @@ function checkOverallOccupancy() {
 
 function updateAC() {
   if (presentationMode) return;
+  
   const isOccupied = Object.values(activeZones).some(timer => timer !== null);
-  if (!isOccupied) return;
+  if (!isOccupied) return; // Do nothing if room is empty, checkOverallOccupancy handles the OFF command
 
-  let acCommand = 'OFF';
-  if (currentTemp >= 28.0) acCommand = 'FAST';
-  else if (currentTemp >= 24.0) acCommand = 'SLOW';
-
+  // AC stays SLOW below 25, goes FAST at 25 and above
+  let acCommand = currentTemp >= 25.0 ? 'FAST' : 'SLOW';
   publishSensorData(COMMAND_TOPIC, { device_id: 'AC', command: acCommand });
 }
 // --- END SMART OFFICE DECISION ENGINE ---
@@ -155,7 +154,7 @@ subClient.on('message', async (topic, message) => {
   try {
     const parsed = JSON.parse(text)
     
-    // Evaluate the Smart Logic immediately when a message arrives
+    // Evaluate rules immediately upon receiving data
     evaluateSmartRules(parsed);
 
     await saveToRedis(topic, parsed)
@@ -206,26 +205,23 @@ export async function publishFromRedis() {
     const latestMotion = await getLatestFromRepo(motionRepository)
 
     if (temp) {
-      publishSensorData('office/commands/node_b', { type: 'temperature', temperature: Number(temp.value), ts: temp.timestamp })
-      publishSensorData('sensor:updates', { type: 'temperature', temperature: Number(temp.value), ts: temp.timestamp })
+      publishSensorData('redis/temperature', { type: 'temperature', temperature: Number(temp.value), ts: temp.timestamp })
     }
     if (humidity) {
-      publishSensorData('office/commands/node_b', { type: 'humidity', humidity: Number(humidity.value), ts: humidity.timestamp })
-      publishSensorData('sensor:updates', { type: 'humidity', humidity: Number(humidity.value), ts: humidity.timestamp })
-
+      publishSensorData('redis/humidity', { type: 'humidity', humidity: Number(humidity.value), ts: humidity.timestamp })
     }
     if (latestMotion) {
-      publishSensorData('office/commands/node_b', { type: 'periodic_motion', states: { zone_1: latestMotion.zone1, zone_2: latestMotion.zone2, zone_3: latestMotion.zone3 }, ts: latestMotion.timestamp })
-      publishSensorData('sensor:updates', { type: 'periodic_motion', states: { zone_1: latestMotion.zone1, zone_2: latestMotion.zone2, zone_3: latestMotion.zone3 }, ts: latestMotion.timestamp })
+      publishSensorData('redis/motion', { type: 'periodic_motion', states: { zone_1: latestMotion.zone1, zone_2: latestMotion.zone2, zone_3: latestMotion.zone3 }, ts: latestMotion.timestamp })
     }
 
-    // Notice: Command publishing has been removed from here and moved to evaluateSmartRules()
+    // Notice: The flawed 1-second interval command spam has been entirely deleted from here.
 
   } catch (error) {
     console.error('[MQTT PUB] error publishing from Redis', error)
   }
 }
 
+// Periodically publish latest Redis data to devices on network
 setInterval(() => {
   publishFromRedis().catch((err) => {
     console.error('[MQTT PUB] periodic publish error', err)
