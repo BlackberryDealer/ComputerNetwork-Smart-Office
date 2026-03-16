@@ -103,7 +103,7 @@ function updateAC() {
   if (!isOccupied) return; // Do nothing if room is empty, checkOverallOccupancy handles the OFF command
 
   // AC stays SLOW below 25, goes FAST at 25 and above
-  let acCommand = currentTemp >= 25.0 ? 'FAST' : 'SLOW';
+  let acCommand = currentTemp > 25.5 ? 'FAST' : 'SLOW';
   sendCommand('AC', acCommand);
 }
 // --- END SMART OFFICE DECISION ENGINE ---
