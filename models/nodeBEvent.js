@@ -6,7 +6,7 @@ const nodeBEventSchema = new Schema('nodeBEvent', {
   temp: { type: 'number' },
   status: { type: 'string' },
   message: { type: 'text' },
-  timestamp: { type: 'date' }
+  timestamp: { type: 'date', sortable: true }
 });
 
 export default nodeBEventSchema;
