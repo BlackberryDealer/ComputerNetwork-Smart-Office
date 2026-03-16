@@ -59,7 +59,7 @@ client.on_connect = on_connect
 client.on_message = on_message
 
 try:
-    print("Starting Dumb Actuator Node B")
+    print("Starting Actuator Node B")
     client.connect(BROKER_IP, 1883, 60)
     client.loop_start() 
     
