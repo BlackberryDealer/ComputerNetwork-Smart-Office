@@ -206,13 +206,13 @@ export async function publishFromRedis() {
     const latestMotion = await getLatestFromRepo(motionRepository)
 
     if (temp) {
-      publishSensorData('redis/temperature', { type: 'temperature', temperature: Number(temp.value), ts: temp.timestamp })
+      publishSensorData('office/commands/node_b', { type: 'temperature', temperature: Number(temp.value), ts: temp.timestamp })
     }
     if (humidity) {
-      publishSensorData('redis/humidity', { type: 'humidity', humidity: Number(humidity.value), ts: humidity.timestamp })
+      publishSensorData('office/commands/node_b', { type: 'humidity', humidity: Number(humidity.value), ts: humidity.timestamp })
     }
     if (latestMotion) {
-      publishSensorData('redis/motion', { type: 'periodic_motion', states: { zone_1: latestMotion.zone1, zone_2: latestMotion.zone2, zone_3: latestMotion.zone3 }, ts: latestMotion.timestamp })
+      publishSensorData('office/commands/node_b', { type: 'periodic_motion', states: { zone_1: latestMotion.zone1, zone_2: latestMotion.zone2, zone_3: latestMotion.zone3 }, ts: latestMotion.timestamp })
     }
 
     // Notice: Command publishing has been removed from here and moved to evaluateSmartRules()
