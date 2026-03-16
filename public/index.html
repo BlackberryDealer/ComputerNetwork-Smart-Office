@@ -13,12 +13,39 @@
     .motion-wrapper { display:flex; justify-content:center; margin-top:0.4rem; }
     .motion-chart { max-width:350px; max-height:350px; width:100%; height:100%; }
     pre { background: #111827; color: #f9fafb; border-radius: 0.5rem; padding: 0.7rem; overflow:auto; max-height: 260px; }
+
+    /* Tabs CSS */
+    .tabs { display: flex; gap: 1rem; margin-bottom: 1rem; border-bottom: 2px solid #e5e7eb; }
+    .tab-btn { padding: 0.8rem 1.5rem; border: none; background: transparent; cursor: pointer; font-size: 1rem; font-weight: 600; color: #6b7280; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+    .tab-btn:hover { color: #111827; }
+    .tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; }
+    .tab-content { display: none; animation: fadeIn 0.3s ease; }
+    .tab-content.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Control Panel CSS */
+    .control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+    .control-card { background: #fff; border-radius: 0.8rem; padding: 1.2rem; box-shadow: 0 4px 12px rgba(0,0,0,.05); display: flex; flex-direction: column; gap: 1rem; }
+    .control-header { font-weight: 600; font-size: 1.1rem; color: #1f2937; display: flex; justify-content: space-between; align-items: center; }
+    .status-badge { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 1rem; background: #e5e7eb; color: #4b5563; font-weight: bold; }
+    .status-badge.manual { background: #fef08a; color: #854d0e; }
+    .btn-group { display: flex; gap: 0.5rem; }
+    .ctrl-btn { flex: 1; padding: 0.6rem; border: 1px solid #d1d5db; background: #fff; border-radius: 0.4rem; cursor: pointer; font-weight: 500; transition: all 0.2s; color: #374151; }
+    .ctrl-btn:hover { background: #f3f4f6; }
+    .ctrl-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
   </style>
 </head>
 
 <body>
   <h1>Smart Office Real-time Dashboard</h1>
-  <div class="header">
+  
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('dashboard-tab')">Dashboard</button>
+    <button class="tab-btn" onclick="switchTab('control-panel-tab')">Control Panel</button>
+  </div>
+
+  <div id="dashboard-tab" class="tab-content active">
+    <div class="header">
     <div class="box" style="flex:1;">
       <div>Broker status: <strong id="broker">Connecting...</strong></div>
       <div>Event count: <strong id="count">0</strong></div>
@@ -72,6 +99,49 @@
     <h3>Recent Events</h3>
     <pre id="messages"><strong>Time                     | Topic              | Payload</strong>
 No messages yet.</pre>
+  </div>
+  </div> <!-- end dashboard tab -->
+
+  <div id="control-panel-tab" class="tab-content">
+    <div class="control-grid">
+      <!-- AC Control -->
+      <div class="control-card">
+        <div class="control-header">Air Conditioner <span class="status-badge" id="badge-AC">AUTO</span></div>
+        <div class="btn-group" id="grp-AC">
+          <button class="ctrl-btn active" onclick="setOverride('AC', 'AUTO')">Auto</button>
+          <button class="ctrl-btn" onclick="setOverride('AC', 'OFF')">Off</button>
+          <button class="ctrl-btn" onclick="setOverride('AC', 'SLOW')">Slow</button>
+          <button class="ctrl-btn" onclick="setOverride('AC', 'FAST')">Fast</button>
+        </div>
+      </div>
+      <!-- LED 1 Control -->
+      <div class="control-card">
+        <div class="control-header">LED Zone 1 <span class="status-badge" id="badge-LED_1">AUTO</span></div>
+        <div class="btn-group" id="grp-LED_1">
+          <button class="ctrl-btn active" onclick="setOverride('LED_1', 'AUTO')">Auto</button>
+          <button class="ctrl-btn" onclick="setOverride('LED_1', 'OFF')">Off</button>
+          <button class="ctrl-btn" onclick="setOverride('LED_1', 'ON')">On</button>
+        </div>
+      </div>
+      <!-- LED 2 Control -->
+      <div class="control-card">
+        <div class="control-header">LED Zone 2 <span class="status-badge" id="badge-LED_2">AUTO</span></div>
+        <div class="btn-group" id="grp-LED_2">
+          <button class="ctrl-btn active" onclick="setOverride('LED_2', 'AUTO')">Auto</button>
+          <button class="ctrl-btn" onclick="setOverride('LED_2', 'OFF')">Off</button>
+          <button class="ctrl-btn" onclick="setOverride('LED_2', 'ON')">On</button>
+        </div>
+      </div>
+      <!-- LED 3 Control -->
+      <div class="control-card">
+        <div class="control-header">LED Zone 3 <span class="status-badge" id="badge-LED_3">AUTO</span></div>
+        <div class="btn-group" id="grp-LED_3">
+          <button class="ctrl-btn active" onclick="setOverride('LED_3', 'AUTO')">Auto</button>
+          <button class="ctrl-btn" onclick="setOverride('LED_3', 'OFF')">Off</button>
+          <button class="ctrl-btn" onclick="setOverride('LED_3', 'ON')">On</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
@@ -236,6 +306,59 @@ No messages yet.</pre>
         messagesEl.textContent = `Time                     | Topic               | Payload\n${history.join('\n')}`;
       }
     });
+
+    // Control Panel Logic
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById(tabId).classList.add('active');
+    }
+
+    async function fetchOverrides() {
+      try {
+        const res = await fetch('/api/overrides');
+        const overrides = await res.json();
+        for (const [device, command] of Object.entries(overrides)) {
+          updateOverrideUI(device, command === null ? 'AUTO' : command);
+        }
+      } catch (err) { console.error('Failed to fetch overrides', err); }
+    }
+
+    async function setOverride(device, command) {
+      try {
+        const res = await fetch('/api/overrides', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_id: device, command: command })
+        });
+        const data = await res.json();
+        if (data.success) {
+          updateOverrideUI(device, command);
+        }
+      } catch (err) { console.error('Failed to set override', err); }
+    }
+
+    function updateOverrideUI(device, mode) {
+      const group = document.getElementById(`grp-${device}`);
+      if (!group) return;
+      
+      const badge = document.getElementById(`badge-${device}`);
+      badge.textContent = mode;
+      if (mode === 'AUTO') badge.classList.remove('manual');
+      else badge.classList.add('manual');
+
+      // Update button highlights
+      Array.from(group.children).forEach(btn => {
+        if (btn.textContent.trim().toUpperCase() === mode) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+    }
+
+    fetchOverrides();
   </script>
 </body>
 

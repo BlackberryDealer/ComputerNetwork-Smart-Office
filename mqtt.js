@@ -27,16 +27,28 @@ const MOTION_TIMEOUT = 5000; // 5 seconds timeout for LEDs
 let currentTemp = 24.0;
 let presentationMode = false;
 
+export const deviceOverrides = {
+  AC: null,
+  LED_1: null,
+  LED_2: null,
+  LED_3: null
+};
+
+function sendCommand(device_id, command) {
+  if (deviceOverrides[device_id]) return; // Blocked by override
+  publishSensorData(COMMAND_TOPIC, { device_id, command });
+}
+
 function evaluateSmartRules(payload) {
   // 1. Presentation Mode Logic
   if (payload.type === 'mode' && payload.status === 'presentation') {
     presentationMode = !presentationMode;
     if (presentationMode) {
       console.log('[Smart Logic] Presentation Mode ON. Dimming office.');
-      publishSensorData(COMMAND_TOPIC, { device_id: 'LED_1', command: 'OFF' });
-      publishSensorData(COMMAND_TOPIC, { device_id: 'LED_2', command: 'OFF' });
-      publishSensorData(COMMAND_TOPIC, { device_id: 'LED_3', command: 'OFF' });
-      publishSensorData(COMMAND_TOPIC, { device_id: 'AC', command: 'SLOW' });
+      sendCommand('LED_1', 'OFF');
+      sendCommand('LED_2', 'OFF');
+      sendCommand('LED_3', 'OFF');
+      sendCommand('AC', 'SLOW');
     } else {
       console.log('[Smart Logic] Presentation Mode OFF. Resuming auto-sensors.');
       updateAC(); // Re-evaluate AC based on current temp and occupancy
@@ -54,13 +66,13 @@ function evaluateSmartRules(payload) {
       const isMotion = payload.states[`zone_${i}`];
       if (isMotion) {
         roomJustOccupied = true;
-        publishSensorData(COMMAND_TOPIC, { device_id: `LED_${i}`, command: 'ON' });
+        sendCommand(`LED_${i}`, 'ON');
         
         // Clear existing timer and start a new 5-second countdown
         if (activeZones[i]) clearTimeout(activeZones[i]);
         activeZones[i] = setTimeout(() => {
           console.log(`[Smart Logic] Zone ${i} empty for 5s. Turning OFF.`);
-          publishSensorData(COMMAND_TOPIC, { device_id: `LED_${i}`, command: 'OFF' });
+          sendCommand(`LED_${i}`, 'OFF');
           activeZones[i] = null; 
           checkOverallOccupancy();
         }, MOTION_TIMEOUT);
@@ -80,7 +92,7 @@ function checkOverallOccupancy() {
   const isOccupied = Object.values(activeZones).some(timer => timer !== null);
   if (!isOccupied && !presentationMode) {
     console.log('[Smart Logic] Entire office is empty. AC Auto-OFF.');
-    publishSensorData(COMMAND_TOPIC, { device_id: 'AC', command: 'OFF' });
+    sendCommand('AC', 'OFF');
   }
 }
 
@@ -92,7 +104,7 @@ function updateAC() {
 
   // AC stays SLOW below 25, goes FAST at 25 and above
   let acCommand = currentTemp >= 25.0 ? 'FAST' : 'SLOW';
-  publishSensorData(COMMAND_TOPIC, { device_id: 'AC', command: acCommand });
+  sendCommand('AC', acCommand);
 }
 // --- END SMART OFFICE DECISION ENGINE ---
 

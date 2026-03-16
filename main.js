@@ -9,7 +9,7 @@ import {
   motionRepository,
 } from './config/redisRepository.js'
 import redisClient from './config/redis.js'
-import { publishSensorData } from './mqtt.js'
+import { publishSensorData, deviceOverrides } from './mqtt.js'
 import { EntityId } from 'redis-om'
 import { Server as SocketIOServer } from 'socket.io'
 import './mqtt.js' // Ensure MQTT client is initialized and connected
@@ -136,6 +136,24 @@ app.get('/api/motion-history', async (req, res) => {
   } catch (err) {
     console.error('Error fetching motion history:', err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/overrides', (req, res) => {
+  res.json(deviceOverrides);
+});
+
+app.post('/api/overrides', (req, res) => {
+  const { device_id, command } = req.body;
+  if (!device_id) return res.status(400).json({ error: 'device_id required' });
+  
+  if (command === 'AUTO' || command === null) {
+    deviceOverrides[device_id] = null;
+    res.json({ success: true, mode: 'AUTO', device_id });
+  } else {
+    deviceOverrides[device_id] = command;
+    publishSensorData('office/commands/node_b', { device_id, command });
+    res.json({ success: true, mode: 'MANUAL', device_id, command });
   }
 });
 
