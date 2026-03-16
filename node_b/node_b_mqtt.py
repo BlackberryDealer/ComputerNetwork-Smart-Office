@@ -20,6 +20,8 @@ COMMAND_TOPIC = "office/commands/node_b"
 
 # Global Variables
 ac_mode = "OFF"
+last_msg_time = time.time()
+timeout_triggered = False
 
 def on_connect(client, userdata, flags, rc):
     print(f"Connected to Node C Broker on {BROKER_IP}")
@@ -27,7 +29,10 @@ def on_connect(client, userdata, flags, rc):
     print(f"Listening for commands on: {COMMAND_TOPIC}")
 
 def on_message(client, userdata, msg):
-    global ac_mode
+    global ac_mode, last_msg_time, timeout_triggered
+    last_msg_time = time.time()
+    timeout_triggered = False
+    
     payload = msg.payload.decode("utf-8")
     
     try:
@@ -68,6 +73,14 @@ try:
     step = 0.05
     
     while True:
+        # Check for timeout
+        if time.time() - last_msg_time > 10 and not timeout_triggered:
+            print("Timeout: No commands for 10 seconds. Turning devices OFF.")
+            ac_mode = "OFF"
+            for key, led in leds.items():
+                led.off()
+            timeout_triggered = True
+
         # Continuous AC Servo Sweeping (No timers, purely based on ac_mode state)
         if ac_mode == "OFF":
             time.sleep(0.5) 
