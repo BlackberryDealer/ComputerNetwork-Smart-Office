@@ -96,7 +96,9 @@ No messages yet.</pre>
 
     const commonOpts = { responsive: true, animation: false, plugins: { legend: { display: true } }, scales: { x: { display: true, title: { display: true, text: 'Time' } }, y: { beginAtZero: true } } };
 
-    const tempChart = new Chart(document.getElementById('temperatureChart'), { type: 'line', data: temperatureData, options: commonOpts });
+    const tempOpts = { responsive: true, animation: false, plugins: { legend: { display: true } }, scales: { x: { display: true, title: { display: true, text: 'Time' } } } };
+
+    const tempChart = new Chart(document.getElementById('temperatureChart'), { type: 'line', data: temperatureData, options: tempOpts });
     const humidityChart = new Chart(document.getElementById('humidityChart'), { type: 'line', data: humidityData, options: commonOpts });
     const motionChart1 = new Chart(document.getElementById('motionChart1'), { type: 'pie', data: motionData1, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom' } } } });
     const motionChart2 = new Chart(document.getElementById('motionChart2'), { type: 'pie', data: motionData2, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom' } } } });
