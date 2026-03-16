@@ -238,4 +238,4 @@ setInterval(() => {
   publishFromRedis().catch((err) => {
     console.error('[MQTT PUB] periodic publish error', err)
   })
-}, 1000)
+}, 5000)
