@@ -36,7 +36,15 @@
       <canvas id="humidityChart"></canvas>
     </div>
     <div class="box">
-      <h3>Motion Zones (% in last minute)</h3>
+      <h3 style="display:flex; justify-content:space-between; align-items:center; margin-top:0;">
+        Motion Zones
+        <select id="motionRange" style="padding:0.2rem; font-size:0.9rem; margin-left:1rem; border-radius:0.3rem;">
+          <option value="minute">Last Minute</option>
+          <option value="hour">Past Hour</option>
+          <option value="day">Past Day</option>
+          <option value="week">Past Week</option>
+        </select>
+      </h3>
       <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
         <div>
           <div>Zone 1</div>
@@ -105,6 +113,8 @@ No messages yet.</pre>
       chart.update('none');
     }
 
+    const motionRangeSel = document.getElementById('motionRange');
+
     function updateMotionZone(zoneIndex, motion) {
       const oneMinuteEvents = [oneMinuteEvents1, oneMinuteEvents2, oneMinuteEvents3][zoneIndex - 1];
       const motionChart = [motionChart1, motionChart2, motionChart3][zoneIndex - 1];
@@ -118,14 +128,62 @@ No messages yet.</pre>
       while (oneMinuteEvents.length && oneMinuteEvents[0].t < minAgo) {
         oneMinuteEvents.shift();
       }
-      const movementCount = oneMinuteEvents.reduce((acc, e) => acc + e.motion, 0);
-      const total = oneMinuteEvents.length || 1;
+
+      if (motionRangeSel && motionRangeSel.value === 'minute') {
+        const movementCount = oneMinuteEvents.reduce((acc, e) => acc + e.motion, 0);
+        const total = oneMinuteEvents.length || 1;
+        const idle = total - movementCount;
+        motionChart.data.datasets[0].data = [movementCount, idle];
+        motionChart.update();
+
+        const percent = Math.round((movementCount / total) * 100);
+        motionLabel.textContent = `Movement: ${percent}% (last 60s)`;
+        motionCount.textContent = `${movementCount} / ${total}`;
+      }
+    }
+
+    let motionInterval = null;
+    motionRangeSel.addEventListener('change', (e) => {
+      const range = e.target.value;
+      if (range === 'minute') {
+        clearInterval(motionInterval);
+        recalcLocalMotion();
+      } else {
+        fetchHistory(range);
+        clearInterval(motionInterval);
+        motionInterval = setInterval(() => fetchHistory(range), 10000);
+      }
+    });
+
+    function recalcLocalMotion() {
+      if (oneMinuteEvents1.length) updateMotionZone(1, oneMinuteEvents1[oneMinuteEvents1.length-1].motion);
+      if (oneMinuteEvents2.length) updateMotionZone(2, oneMinuteEvents2[oneMinuteEvents2.length-1].motion);
+      if (oneMinuteEvents3.length) updateMotionZone(3, oneMinuteEvents3[oneMinuteEvents3.length-1].motion);
+    }
+
+    async function fetchHistory(range) {
+      try {
+        const res = await fetch(`/api/motion-history?range=${range}`);
+        const data = await res.json();
+        const rngStr = range === 'hour' ? 'past hour' : range === 'day' ? 'past day' : 'past week';
+        renderZoneHistorical(1, data.zone_1, data.total, rngStr);
+        renderZoneHistorical(2, data.zone_2, data.total, rngStr);
+        renderZoneHistorical(3, data.zone_3, data.total, rngStr);
+      } catch (err) { console.error('Error fetching motion history:', err); }
+    }
+
+    function renderZoneHistorical(zoneIndex, movementCount, totalCount, rngStr) {
+      const motionChart = [motionChart1, motionChart2, motionChart3][zoneIndex - 1];
+      const motionLabel = document.getElementById(`motionLabel${zoneIndex}`);
+      const motionCount = document.getElementById(`motionCount${zoneIndex}`);
+      
+      const total = totalCount || 1;
       const idle = total - movementCount;
       motionChart.data.datasets[0].data = [movementCount, idle];
       motionChart.update();
 
-      const percent = Math.round((movementCount / total) * 100);
-      motionLabel.textContent = `Movement: ${percent}% (last 60s)`;
+      const percent = Math.round((movementCount / total) * 100) || 0;
+      motionLabel.textContent = `Movement: ${percent}% (${rngStr})`;
       motionCount.textContent = `${movementCount} / ${total}`;
     }
 
@@ -143,13 +201,14 @@ No messages yet.</pre>
       }
 
       const payload = data.payload || {};
-      if (payload.temperature !== undefined) {
+      const tValue = payload.temperature !== undefined ? payload.temperature : payload.temp;
+      if (tValue !== undefined) {
         if (isInitial) {
-          tempChart.data.datasets[0].data[29] = Number(payload.temperature);
+          tempChart.data.datasets[0].data[29] = Number(tValue);
           tempChart.data.labels[29] = new Date(data.timestamp).toISOString();
           tempChart.update('none');
         } else {
-          pushPoint(tempChart, Number(payload.temperature), new Date(data.timestamp).toISOString());
+          pushPoint(tempChart, Number(tValue), new Date(data.timestamp).toISOString());
         }
       }
       if (payload.humidity !== undefined) {
