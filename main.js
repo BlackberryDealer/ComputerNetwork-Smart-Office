@@ -12,6 +12,7 @@ import redisClient from './config/redis.js'
 import { publishSensorData } from './mqtt.js'
 import { EntityId } from 'redis-om'
 import { Server as SocketIOServer } from 'socket.io'
+import './mqtt.js' // Ensure MQTT client is initialized and connected
 
 const app = express()
 
