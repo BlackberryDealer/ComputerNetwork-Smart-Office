@@ -9,9 +9,10 @@ import {
   motionRepository,
 } from './config/redisRepository.js'
 import redisClient from './config/redis.js'
-import { publishSensorData } from './mqtt.js'
+import { publishSensorData, deviceOverrides } from './mqtt.js'
 import { EntityId } from 'redis-om'
 import { Server as SocketIOServer } from 'socket.io'
+import './mqtt.js' // Ensure MQTT client is initialized and connected
 
 const app = express()
 
@@ -47,8 +48,40 @@ app.get('/', (req, res) => {
   res.sendFile('index.html')
 })
 
-io.on('connection', (socket) => {
+// Helper functions to get latest data from Redis
+async function getLatestTemp() {
+  const results = await temperatureRepository.search().sortBy('timestamp', 'DESC').return.all()
+  return results && results.length > 0 ? { temperature: results[0].temperature, timestamp: results[0].timestamp } : null
+}
+
+async function getLatestHumidity() {
+  const results = await humidityRepository.search().sortBy('timestamp', 'DESC').return.all()
+  return results && results.length > 0 ? { humidity: results[0].humidity, timestamp: results[0].timestamp } : null
+}
+
+async function getLatestMotion() {
+  const results = await motionRepository.search().sortBy('timestamp', 'DESC').return.all()
+  return results && results.length > 0 ? { zone1: results[0].zone1, zone2: results[0].zone2, zone3: results[0].zone3, timestamp: results[0].timestamp } : null
+}
+
+io.on('connection', async (socket) => {
   console.log('Socket client connected', socket.id)
+
+  // Send initial data from Redis
+  const temp = await getLatestTemp()
+  if (temp) {
+    socket.emit('sensor-update', { topic: 'initial/temp', payload: { temperature: temp.temperature }, timestamp: temp.timestamp })
+  }
+
+  const hum = await getLatestHumidity()
+  if (hum) {
+    socket.emit('sensor-update', { topic: 'initial/humidity', payload: { humidity: hum.humidity }, timestamp: hum.timestamp })
+  }
+
+  const motion = await getLatestMotion()
+  if (motion) {
+    socket.emit('sensor-update', { topic: 'initial/motion', payload: { type: 'periodic_motion', states: { zone_1: motion.zone1, zone_2: motion.zone2, zone_3: motion.zone3 } }, timestamp: motion.timestamp })
+  }
 
   socket.on('disconnect', () => {
     console.log('Socket client disconnected', socket.id)
@@ -67,6 +100,62 @@ await subscriber.subscribe('sensor:updates', (msg) => {
   }
 })
 
+
+app.get('/api/motion-history', async (req, res) => {
+  try {
+    const { range } = req.query;
+    let since = new Date();
+    if (range === 'hour') {
+      since.setHours(since.getHours() - 1);
+    } else if (range === 'day') {
+      since.setDate(since.getDate() - 1);
+    } else if (range === 'week') {
+      since.setDate(since.getDate() - 7);
+    } else {
+      since.setMinutes(since.getMinutes() - 1); // default 1 min
+    }
+
+    const results = await motionRepository.search()
+      .where('timestamp').gte(since)
+      .return.page(0, 100000);
+
+    let z1 = 0, z2 = 0, z3 = 0;
+
+    for (let row of results) {
+      if (row.zone1) z1++;
+      if (row.zone2) z2++;
+      if (row.zone3) z3++;
+    }
+
+    res.json({
+      total: results.length,
+      zone_1: z1,
+      zone_2: z2,
+      zone_3: z3
+    });
+  } catch (err) {
+    console.error('Error fetching motion history:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/overrides', (req, res) => {
+  res.json(deviceOverrides);
+});
+
+app.post('/api/overrides', (req, res) => {
+  const { device_id, command } = req.body;
+  if (!device_id) return res.status(400).json({ error: 'device_id required' });
+  
+  if (command === 'AUTO' || command === null) {
+    deviceOverrides[device_id] = null;
+    res.json({ success: true, mode: 'AUTO', device_id });
+  } else {
+    deviceOverrides[device_id] = command;
+    publishSensorData('office/commands/node_b', { device_id, command });
+    res.json({ success: true, mode: 'MANUAL', device_id, command });
+  }
+});
 
 app.get("/get/:temperature", async (req, res) => {
 

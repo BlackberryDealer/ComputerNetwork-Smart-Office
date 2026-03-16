@@ -10,7 +10,6 @@ import {
 
 const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883'
 
-// Use default reconnect to allow broker startup race
 const connectOptions = {
   clientId: `node-client-${Math.random().toString(16).slice(2)}`,
   clean: true,
@@ -18,14 +17,99 @@ const connectOptions = {
   connectTimeout: 30 * 1000,
 }
 
-// Separate publisher and subscriber clients (same broker)
 const pubClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: `node-pub-${Math.random().toString(16).slice(2)}` })
 const subClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: `node-sub-${Math.random().toString(16).slice(2)}` })
 
+// --- SMART OFFICE DECISION ENGINE ---
+const COMMAND_TOPIC = 'office/commands/node_b';
+const activeZones = { 1: null, 2: null, 3: null };
+const MOTION_TIMEOUT = 5000; // 5 seconds timeout for LEDs
+let currentTemp = 24.0;
+let presentationMode = false;
+
+export const deviceOverrides = {
+  AC: null,
+  LED_1: null,
+  LED_2: null,
+  LED_3: null
+};
+
+function sendCommand(device_id, command) {
+  if (deviceOverrides[device_id]) return; // Blocked by override
+  publishSensorData(COMMAND_TOPIC, { device_id, command });
+}
+
+function evaluateSmartRules(payload) {
+  // 1. Presentation Mode Logic
+  if (payload.type === 'mode' && payload.status === 'presentation') {
+    presentationMode = !presentationMode;
+    if (presentationMode) {
+      console.log('[Smart Logic] Presentation Mode ON. Dimming office.');
+      sendCommand('LED_1', 'OFF');
+      sendCommand('LED_2', 'OFF');
+      sendCommand('LED_3', 'OFF');
+      sendCommand('AC', 'SLOW');
+    } else {
+      console.log('[Smart Logic] Presentation Mode OFF. Resuming auto-sensors.');
+      updateAC(); // Re-evaluate AC based on current temp and occupancy
+    }
+    return;
+  }
+
+  if (presentationMode) return; // Ignore auto-sensors while presenting
+
+  // 2. Motion Logic (5-second timeout)
+  if (payload.type === 'periodic_motion' && payload.states) {
+    let roomJustOccupied = false;
+
+    for (let i = 1; i <= 3; i++) {
+      const isMotion = payload.states[`zone_${i}`];
+      if (isMotion) {
+        roomJustOccupied = true;
+        sendCommand(`LED_${i}`, 'ON');
+        
+        // Clear existing timer and start a new 5-second countdown
+        if (activeZones[i]) clearTimeout(activeZones[i]);
+        activeZones[i] = setTimeout(() => {
+          console.log(`[Smart Logic] Zone ${i} empty for 5s. Turning OFF.`);
+          sendCommand(`LED_${i}`, 'OFF');
+          activeZones[i] = null; 
+          checkOverallOccupancy();
+        }, MOTION_TIMEOUT);
+      }
+    }
+    if (roomJustOccupied) updateAC();
+  }
+
+  // 3. Climate Logic Update
+  if (payload.type === 'climate' && payload.temp !== undefined) {
+    currentTemp = payload.temp;
+    updateAC();
+  }
+}
+
+function checkOverallOccupancy() {
+  const isOccupied = Object.values(activeZones).some(timer => timer !== null);
+  if (!isOccupied && !presentationMode) {
+    console.log('[Smart Logic] Entire office is empty. AC Auto-OFF.');
+    sendCommand('AC', 'OFF');
+  }
+}
+
+function updateAC() {
+  if (presentationMode) return;
+  
+  const isOccupied = Object.values(activeZones).some(timer => timer !== null);
+  if (!isOccupied) return; // Do nothing if room is empty, checkOverallOccupancy handles the OFF command
+
+  // AC stays SLOW below 25, goes FAST at 25 and above
+  let acCommand = currentTemp >= 25.0 ? 'FAST' : 'SLOW';
+  sendCommand('AC', acCommand);
+}
+// --- END SMART OFFICE DECISION ENGINE ---
+
 subClient.on('connect', () => {
   console.log('[MQTT SUB] connected to broker', brokerUrl)
-
-  // Subscribe to Node B topics and smartoffice namespace
   const topics = ['smartoffice/sensors', 'smartoffice/#', 'redis/#', 'node_b/#']
   subClient.subscribe(topics, { qos: 0 }, (err, granted) => {
     if (err) {
@@ -39,19 +123,15 @@ subClient.on('connect', () => {
 async function saveToRedis(topic, payload) {
   const now = new Date()
   const ts = payload.ts ? new Date(payload.ts) : now
-
   let saved = false
 
-  // Save standard sensor values
   if (payload.temperature !== undefined || payload.temp !== undefined) {
     const tempValue = payload.temperature !== undefined ? payload.temperature : payload.temp
     await temperatureRepository.save({ temperature: Number(tempValue), timestamp: ts })
-    console.log('[Redis] temperature saved', tempValue)
     saved = true
   }
   if (payload.humidity !== undefined) {
     await humidityRepository.save({ humidity: Number(payload.humidity), timestamp: ts })
-    console.log('[Redis] humidity saved', payload.humidity)
     saved = true
   }
   if (payload.type === "periodic_motion" && payload.states) {
@@ -61,11 +141,9 @@ async function saveToRedis(topic, payload) {
       zone3: Boolean(payload.states.zone_3),
       timestamp: ts
     })
-    console.log('[Redis] motion saved', payload.states)
     saved = true
   }
 
-  // Save Node B event payloads for any smartoffice/sensors messages
   if (topic.startsWith('smartoffice/') || topic.startsWith('node_b/')) {
     const zone = payload.zone !== undefined ? Number(payload.zone) : undefined
     const temp = payload.temp !== undefined ? Number(payload.temp) : undefined
@@ -73,14 +151,8 @@ async function saveToRedis(topic, payload) {
     const type = payload.type ? String(payload.type) : 'unknown'
 
     await nodeBEventRepository.save({
-      type,
-      zone,
-      temp,
-      status,
-      message: JSON.stringify(payload),
-      timestamp: ts,
+      type, zone, temp, status, message: JSON.stringify(payload), timestamp: ts,
     })
-    console.log('[Redis] nodeBEvent saved', { type, zone, temp, status })
     saved = true
   }
 
@@ -91,10 +163,12 @@ async function saveToRedis(topic, payload) {
 
 subClient.on('message', async (topic, message) => {
   const text = message.toString()
-  console.log(`[MQTT SUB] message: ${topic} -> ${text}`)
   try {
     const parsed = JSON.parse(text)
-    console.log('[MQTT SUB] parsed payload', parsed)
+    
+    // Evaluate rules immediately upon receiving data
+    evaluateSmartRules(parsed);
+
     await saveToRedis(topic, parsed)
     const update = { topic, payload: parsed, timestamp: new Date().toISOString() }
     await redisClient.publish('sensor:updates', JSON.stringify(update))
@@ -126,7 +200,6 @@ export function publishSensorData(topic, payload) {
 }
 
 async function getLatestFromRepo(repository, fieldName) {
-  // Get newest entry by timestamp
   const results = await repository.search().sortBy('timestamp', 'DESC').returnAll()
   if (!results || results.length === 0) return null
   const latest = results[0]
@@ -153,20 +226,8 @@ export async function publishFromRedis() {
       publishSensorData('redis/motion', { type: 'periodic_motion', states: { zone_1: latestMotion.zone1, zone_2: latestMotion.zone2, zone_3: latestMotion.zone3 }, ts: latestMotion.timestamp })
     }
 
-    // Publish commands to node_b based on sensor data
-    if (temp) {
-      const command = temp.value > 25 ? 'FAST' : 'OFF';
-      publishSensorData('office/commands/node_b', { device_id: 'AC', command });
-    }
-    if (latestMotion) {
-      publishSensorData('office/commands/node_b', { device_id: 'LED_1', command: latestMotion.zone1 ? 'ON' : 'OFF' });
-      publishSensorData('office/commands/node_b', { device_id: 'LED_2', command: latestMotion.zone2 ? 'ON' : 'OFF' });
-      publishSensorData('office/commands/node_b', { device_id: 'LED_3', command: latestMotion.zone3 ? 'ON' : 'OFF' });
-    }
+    // Notice: The flawed 1-second interval command spam has been entirely deleted from here.
 
-    if (!temp && !humidity && !latestMotion) {
-      console.log('[MQTT PUB] no Redis data yet to publish')
-    }
   } catch (error) {
     console.error('[MQTT PUB] error publishing from Redis', error)
   }
@@ -177,14 +238,4 @@ setInterval(() => {
   publishFromRedis().catch((err) => {
     console.error('[MQTT PUB] periodic publish error', err)
   })
-}, 1000)
-
-// Optional test periodic publishing
-// setInterval(() => {
-//   publishSensorData('office/temperature', {
-//     sensor: 'temperature',
-//     value: Number((20 + Math.random() * 10).toFixed(1)),
-//     ts: new Date().toISOString(),
-//   })
-// }, 10000)
-
+}, 5000)

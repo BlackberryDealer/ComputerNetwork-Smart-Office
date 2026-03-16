@@ -13,12 +13,39 @@
     .motion-wrapper { display:flex; justify-content:center; margin-top:0.4rem; }
     .motion-chart { max-width:350px; max-height:350px; width:100%; height:100%; }
     pre { background: #111827; color: #f9fafb; border-radius: 0.5rem; padding: 0.7rem; overflow:auto; max-height: 260px; }
+
+    /* Tabs CSS */
+    .tabs { display: flex; gap: 1rem; margin-bottom: 1rem; border-bottom: 2px solid #e5e7eb; }
+    .tab-btn { padding: 0.8rem 1.5rem; border: none; background: transparent; cursor: pointer; font-size: 1rem; font-weight: 600; color: #6b7280; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+    .tab-btn:hover { color: #111827; }
+    .tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; }
+    .tab-content { display: none; animation: fadeIn 0.3s ease; }
+    .tab-content.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Control Panel CSS */
+    .control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+    .control-card { background: #fff; border-radius: 0.8rem; padding: 1.2rem; box-shadow: 0 4px 12px rgba(0,0,0,.05); display: flex; flex-direction: column; gap: 1rem; }
+    .control-header { font-weight: 600; font-size: 1.1rem; color: #1f2937; display: flex; justify-content: space-between; align-items: center; }
+    .status-badge { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 1rem; background: #e5e7eb; color: #4b5563; font-weight: bold; }
+    .status-badge.manual { background: #fef08a; color: #854d0e; }
+    .btn-group { display: flex; gap: 0.5rem; }
+    .ctrl-btn { flex: 1; padding: 0.6rem; border: 1px solid #d1d5db; background: #fff; border-radius: 0.4rem; cursor: pointer; font-weight: 500; transition: all 0.2s; color: #374151; }
+    .ctrl-btn:hover { background: #f3f4f6; }
+    .ctrl-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
   </style>
 </head>
 
 <body>
   <h1>Smart Office Real-time Dashboard</h1>
-  <div class="header">
+  
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('dashboard-tab')">Dashboard</button>
+    <button class="tab-btn" onclick="switchTab('control-panel-tab')">Control Panel</button>
+  </div>
+
+  <div id="dashboard-tab" class="tab-content active">
+    <div class="header">
     <div class="box" style="flex:1;">
       <div>Broker status: <strong id="broker">Connecting...</strong></div>
       <div>Event count: <strong id="count">0</strong></div>
@@ -36,25 +63,33 @@
       <canvas id="humidityChart"></canvas>
     </div>
     <div class="box">
-      <h3>Motion Zones (% in last minute)</h3>
-      <div class="grid" style="grid-template-columns: repeat(3, 1fr);">
+      <h3 style="display:flex; justify-content:space-between; align-items:center; margin-top:0;">
+        Motion Zones
+        <select id="motionRange" style="padding:0.2rem; font-size:0.9rem; margin-left:1rem; border-radius:0.3rem;">
+          <option value="minute">Last Minute</option>
+          <option value="hour">Past Hour</option>
+          <option value="day">Past Day</option>
+          <option value="week">Past Week</option>
+        </select>
+      </h3>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
         <div>
           <div>Zone 1</div>
           <div id="motionLabel1">Movement: 0%</div>
           <div id="motionCount1" class="small">0 / 0</div>
-          <canvas id="motionChart1" class="motion-chart"></canvas>
+          <div class="motion-wrapper"><canvas id="motionChart1" width="200" height="200" class="motion-chart"></canvas></div>
         </div>
         <div>
           <div>Zone 2</div>
           <div id="motionLabel2">Movement: 0%</div>
           <div id="motionCount2" class="small">0 / 0</div>
-          <canvas id="motionChart2" class="motion-chart"></canvas>
+          <div class="motion-wrapper"><canvas id="motionChart2" width="200" height="200" class="motion-chart"></canvas></div>
         </div>
         <div>
           <div>Zone 3</div>
           <div id="motionLabel3">Movement: 0%</div>
           <div id="motionCount3" class="small">0 / 0</div>
-          <canvas id="motionChart3" class="motion-chart"></canvas>
+          <div class="motion-wrapper"><canvas id="motionChart3" width="200" height="200" class="motion-chart"></canvas></div>
         </div>
       </div>
     </div>
@@ -64,6 +99,49 @@
     <h3>Recent Events</h3>
     <pre id="messages"><strong>Time                     | Topic              | Payload</strong>
 No messages yet.</pre>
+  </div>
+  </div> <!-- end dashboard tab -->
+
+  <div id="control-panel-tab" class="tab-content">
+    <div class="control-grid">
+      <!-- AC Control -->
+      <div class="control-card">
+        <div class="control-header">Air Conditioner <span class="status-badge" id="badge-AC">AUTO</span></div>
+        <div class="btn-group" id="grp-AC">
+          <button class="ctrl-btn active" onclick="setOverride('AC', 'AUTO')">Auto</button>
+          <button class="ctrl-btn" onclick="setOverride('AC', 'OFF')">Off</button>
+          <button class="ctrl-btn" onclick="setOverride('AC', 'SLOW')">Slow</button>
+          <button class="ctrl-btn" onclick="setOverride('AC', 'FAST')">Fast</button>
+        </div>
+      </div>
+      <!-- LED 1 Control -->
+      <div class="control-card">
+        <div class="control-header">LED Zone 1 <span class="status-badge" id="badge-LED_1">AUTO</span></div>
+        <div class="btn-group" id="grp-LED_1">
+          <button class="ctrl-btn active" onclick="setOverride('LED_1', 'AUTO')">Auto</button>
+          <button class="ctrl-btn" onclick="setOverride('LED_1', 'OFF')">Off</button>
+          <button class="ctrl-btn" onclick="setOverride('LED_1', 'ON')">On</button>
+        </div>
+      </div>
+      <!-- LED 2 Control -->
+      <div class="control-card">
+        <div class="control-header">LED Zone 2 <span class="status-badge" id="badge-LED_2">AUTO</span></div>
+        <div class="btn-group" id="grp-LED_2">
+          <button class="ctrl-btn active" onclick="setOverride('LED_2', 'AUTO')">Auto</button>
+          <button class="ctrl-btn" onclick="setOverride('LED_2', 'OFF')">Off</button>
+          <button class="ctrl-btn" onclick="setOverride('LED_2', 'ON')">On</button>
+        </div>
+      </div>
+      <!-- LED 3 Control -->
+      <div class="control-card">
+        <div class="control-header">LED Zone 3 <span class="status-badge" id="badge-LED_3">AUTO</span></div>
+        <div class="btn-group" id="grp-LED_3">
+          <button class="ctrl-btn active" onclick="setOverride('LED_3', 'AUTO')">Auto</button>
+          <button class="ctrl-btn" onclick="setOverride('LED_3', 'OFF')">Off</button>
+          <button class="ctrl-btn" onclick="setOverride('LED_3', 'ON')">On</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
@@ -88,7 +166,9 @@ No messages yet.</pre>
 
     const commonOpts = { responsive: true, animation: false, plugins: { legend: { display: true } }, scales: { x: { display: true, title: { display: true, text: 'Time' } }, y: { beginAtZero: true } } };
 
-    const tempChart = new Chart(document.getElementById('temperatureChart'), { type: 'line', data: temperatureData, options: commonOpts });
+    const tempOpts = { responsive: true, animation: false, plugins: { legend: { display: true } }, scales: { x: { display: true, title: { display: true, text: 'Time' } } } };
+
+    const tempChart = new Chart(document.getElementById('temperatureChart'), { type: 'line', data: temperatureData, options: tempOpts });
     const humidityChart = new Chart(document.getElementById('humidityChart'), { type: 'line', data: humidityData, options: commonOpts });
     const motionChart1 = new Chart(document.getElementById('motionChart1'), { type: 'pie', data: motionData1, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom' } } } });
     const motionChart2 = new Chart(document.getElementById('motionChart2'), { type: 'pie', data: motionData2, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom' } } } });
@@ -105,6 +185,8 @@ No messages yet.</pre>
       chart.update('none');
     }
 
+    const motionRangeSel = document.getElementById('motionRange');
+
     function updateMotionZone(zoneIndex, motion) {
       const oneMinuteEvents = [oneMinuteEvents1, oneMinuteEvents2, oneMinuteEvents3][zoneIndex - 1];
       const motionChart = [motionChart1, motionChart2, motionChart3][zoneIndex - 1];
@@ -118,14 +200,62 @@ No messages yet.</pre>
       while (oneMinuteEvents.length && oneMinuteEvents[0].t < minAgo) {
         oneMinuteEvents.shift();
       }
-      const movementCount = oneMinuteEvents.reduce((acc, e) => acc + e.motion, 0);
-      const total = oneMinuteEvents.length || 1;
+
+      if (motionRangeSel && motionRangeSel.value === 'minute') {
+        const movementCount = oneMinuteEvents.reduce((acc, e) => acc + e.motion, 0);
+        const total = oneMinuteEvents.length || 1;
+        const idle = total - movementCount;
+        motionChart.data.datasets[0].data = [movementCount, idle];
+        motionChart.update();
+
+        const percent = Math.round((movementCount / total) * 100);
+        motionLabel.textContent = `Movement: ${percent}% (last 60s)`;
+        motionCount.textContent = `${movementCount} / ${total}`;
+      }
+    }
+
+    let motionInterval = null;
+    motionRangeSel.addEventListener('change', (e) => {
+      const range = e.target.value;
+      if (range === 'minute') {
+        clearInterval(motionInterval);
+        recalcLocalMotion();
+      } else {
+        fetchHistory(range);
+        clearInterval(motionInterval);
+        motionInterval = setInterval(() => fetchHistory(range), 10000);
+      }
+    });
+
+    function recalcLocalMotion() {
+      if (oneMinuteEvents1.length) updateMotionZone(1, oneMinuteEvents1[oneMinuteEvents1.length-1].motion);
+      if (oneMinuteEvents2.length) updateMotionZone(2, oneMinuteEvents2[oneMinuteEvents2.length-1].motion);
+      if (oneMinuteEvents3.length) updateMotionZone(3, oneMinuteEvents3[oneMinuteEvents3.length-1].motion);
+    }
+
+    async function fetchHistory(range) {
+      try {
+        const res = await fetch(`/api/motion-history?range=${range}`);
+        const data = await res.json();
+        const rngStr = range === 'hour' ? 'past hour' : range === 'day' ? 'past day' : 'past week';
+        renderZoneHistorical(1, data.zone_1, data.total, rngStr);
+        renderZoneHistorical(2, data.zone_2, data.total, rngStr);
+        renderZoneHistorical(3, data.zone_3, data.total, rngStr);
+      } catch (err) { console.error('Error fetching motion history:', err); }
+    }
+
+    function renderZoneHistorical(zoneIndex, movementCount, totalCount, rngStr) {
+      const motionChart = [motionChart1, motionChart2, motionChart3][zoneIndex - 1];
+      const motionLabel = document.getElementById(`motionLabel${zoneIndex}`);
+      const motionCount = document.getElementById(`motionCount${zoneIndex}`);
+      
+      const total = totalCount || 1;
       const idle = total - movementCount;
       motionChart.data.datasets[0].data = [movementCount, idle];
       motionChart.update();
 
-      const percent = Math.round((movementCount / total) * 100);
-      motionLabel.textContent = `Movement: ${percent}% (last 60s)`;
+      const percent = Math.round((movementCount / total) * 100) || 0;
+      motionLabel.textContent = `Movement: ${percent}% (${rngStr})`;
       motionCount.textContent = `${movementCount} / ${total}`;
     }
 
@@ -133,25 +263,102 @@ No messages yet.</pre>
     socket.on('disconnect', () => { broker.textContent = 'Disconnected'; });
 
     socket.on('sensor-update', (data) => {
-      count += 1;
-      countEl.textContent = count;
-      const ts = new Date(data.timestamp);
-      const tsLabel = `${ts.toISOString()}`;
-      latestEl.textContent = `${tsLabel} ${data.topic}`;
+      const isInitial = data.topic.startsWith('initial/');
+      if (!isInitial) {
+        count += 1;
+        countEl.textContent = count;
+        const ts = new Date(data.timestamp);
+        const tsLabel = `${ts.toISOString()}`;
+        latestEl.textContent = `${tsLabel} ${data.topic}`;
+      }
 
       const payload = data.payload || {};
-      if (payload.temperature !== undefined) pushPoint(tempChart, Number(payload.temperature), tsLabel);
-      if (payload.humidity !== undefined) pushPoint(humidityChart, Number(payload.humidity), tsLabel);
+      const tValue = payload.temperature !== undefined ? payload.temperature : payload.temp;
+      if (tValue !== undefined) {
+        if (isInitial) {
+          tempChart.data.datasets[0].data[29] = Number(tValue);
+          tempChart.data.labels[29] = new Date(data.timestamp).toISOString();
+          tempChart.update('none');
+        } else {
+          pushPoint(tempChart, Number(tValue), new Date(data.timestamp).toISOString());
+        }
+      }
+      if (payload.humidity !== undefined) {
+        if (isInitial) {
+          humidityChart.data.datasets[0].data[29] = Number(payload.humidity);
+          humidityChart.data.labels[29] = new Date(data.timestamp).toISOString();
+          humidityChart.update('none');
+        } else {
+          pushPoint(humidityChart, Number(payload.humidity), new Date(data.timestamp).toISOString());
+        }
+      }
       if (payload.type === 'periodic_motion' && payload.states) {
         updateMotionZone(1, payload.states.zone_1);
         updateMotionZone(2, payload.states.zone_2);
         updateMotionZone(3, payload.states.zone_3);
       }
 
-      history.unshift(`${tsLabel} | ${data.topic} | ${JSON.stringify(payload)}`);
-      if (history.length > 30) history.pop();
-      messagesEl.textContent = `Time                     | Topic               | Payload\n${history.join('\n')}`;
+      if (!isInitial) {
+        const ts = new Date(data.timestamp);
+        const tsLabel = `${ts.toISOString()}`;
+        history.unshift(`${tsLabel} | ${data.topic} | ${JSON.stringify(payload)}`);
+        if (history.length > 30) history.pop();
+        messagesEl.textContent = `Time                     | Topic               | Payload\n${history.join('\n')}`;
+      }
     });
+
+    // Control Panel Logic
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById(tabId).classList.add('active');
+    }
+
+    async function fetchOverrides() {
+      try {
+        const res = await fetch('/api/overrides');
+        const overrides = await res.json();
+        for (const [device, command] of Object.entries(overrides)) {
+          updateOverrideUI(device, command === null ? 'AUTO' : command);
+        }
+      } catch (err) { console.error('Failed to fetch overrides', err); }
+    }
+
+    async function setOverride(device, command) {
+      try {
+        const res = await fetch('/api/overrides', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_id: device, command: command })
+        });
+        const data = await res.json();
+        if (data.success) {
+          updateOverrideUI(device, command);
+        }
+      } catch (err) { console.error('Failed to set override', err); }
+    }
+
+    function updateOverrideUI(device, mode) {
+      const group = document.getElementById(`grp-${device}`);
+      if (!group) return;
+      
+      const badge = document.getElementById(`badge-${device}`);
+      badge.textContent = mode;
+      if (mode === 'AUTO') badge.classList.remove('manual');
+      else badge.classList.add('manual');
+
+      // Update button highlights
+      Array.from(group.children).forEach(btn => {
+        if (btn.textContent.trim().toUpperCase() === mode) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+    }
+
+    fetchOverrides();
   </script>
 </body>
 
