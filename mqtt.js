@@ -23,6 +23,7 @@ const subClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: `node-s
 // --- SMART OFFICE DECISION ENGINE ---
 const COMMAND_TOPIC = 'office/commands/node_b';
 const activeZones = { 1: null, 2: null, 3: null };
+const zoneOffTimestamps = { 1: null, 2: null, 3: null };
 const MOTION_TIMEOUT = 5000; // 5 seconds timeout for LEDs
 let currentTemp = 24.0;
 let presentationMode = false;
@@ -66,6 +67,16 @@ function evaluateSmartRules(payload) {
       const isMotion = payload.states[`zone_${i}`];
       if (isMotion) {
         roomJustOccupied = true;
+
+        if (zoneOffTimestamps[i]) {
+          const timeOffMs = Date.now() - zoneOffTimestamps[i];
+          const hours = timeOffMs / (1000 * 60 * 60);
+          if (hours > 0) {
+            redisClient.incrByFloat('analytics:time_saved_hours', hours).catch(e => console.error(e));
+          }
+          zoneOffTimestamps[i] = null;
+        }
+
         sendCommand(`LED_${i}`, 'ON');
         
         // Clear existing timer and start a new 5-second countdown
@@ -74,6 +85,11 @@ function evaluateSmartRules(payload) {
           console.log(`[Smart Logic] Zone ${i} empty for 5s. Turning OFF.`);
           sendCommand(`LED_${i}`, 'OFF');
           activeZones[i] = null; 
+
+          // Ghost occupancy tracked
+          redisClient.incr('analytics:ghost_events').catch(e => console.error(e));
+          zoneOffTimestamps[i] = Date.now();
+
           checkOverallOccupancy();
         }, MOTION_TIMEOUT);
       }

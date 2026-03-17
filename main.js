@@ -139,6 +139,58 @@ app.get('/api/motion-history', async (req, res) => {
   }
 });
 
+app.get('/api/analytics', async (req, res) => {
+  try {
+    const ghostEvents = await redisClient.get('analytics:ghost_events') || 0;
+    const timeSavedHours = await redisClient.get('analytics:time_saved_hours') || 0;
+    // EnergySaved = (TimeSavedInHours * 50W) / 1000
+    const energySavedKWh = (parseFloat(timeSavedHours) * 50) / 1000;
+    
+    res.json({
+      automated_corrections: parseInt(ghostEvents, 10),
+      estimated_savings_kwh: energySavedKWh.toFixed(4)
+    });
+  } catch (err) {
+    console.error('Error fetching analytics:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/chart-data', async (req, res) => {
+  try {
+    const since = new Date();
+    since.setHours(since.getHours() - 1); // latest hour data
+
+    // Fetch temp history
+    const temps = await temperatureRepository.search()
+      .where('timestamp').gte(since)
+      .return.all();
+    
+    // Fetch AC events
+    // nodeBEventRepository tracks device commands
+    const { nodeBEventRepository } = await import('./config/redisRepository.js');
+    const commands = await nodeBEventRepository.search()
+      .where('timestamp').gte(since)
+      .return.all();
+      
+    const acEvents = commands.filter(cmd => cmd.message && cmd.message.includes('"device_id":"AC"'));
+    const mappedAcEvents = acEvents.map(evt => {
+      let status = 0;
+      if (evt.message.includes('"command":"SLOW"')) status = 1;
+      if (evt.message.includes('"command":"FAST"')) status = 2;
+      return { timestamp: evt.timestamp, status };
+    });
+
+    res.json({
+      temperature: temps.map(t => ({ timestamp: t.timestamp, temp: t.temperature })),
+      acEvents: mappedAcEvents
+    });
+  } catch (err) {
+    console.error('Error fetching chart data:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/api/overrides', (req, res) => {
   res.json(deviceOverrides);
 });

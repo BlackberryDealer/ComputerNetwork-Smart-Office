@@ -10,12 +10,21 @@ from dht11 import DHT11
 BROKER_IP = "127.0.0.1"
 BROKER_PORT = 1883
 TOPIC = "smartoffice/sensors"
+STATUS_TOPIC = "smartoffice/status/node_a"
+
+# Last Will and Testament
+lwt_payload = json.dumps({"node": "Node A", "status": "offline"})
+online_payload = json.dumps({"node": "Node A", "status": "online"})
 
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+mqtt_client.will_set(STATUS_TOPIC, payload=lwt_payload, qos=1, retain=True)
+
 try:
     mqtt_client.connect(BROKER_IP, BROKER_PORT, 60)
     mqtt_client.loop_start()
     print(f"Connected to MQTT Broker at {BROKER_IP}")
+    # Publish online status
+    mqtt_client.publish(STATUS_TOPIC, online_payload, retain=True)
 except Exception as e:
     print(f"Failed to connect to MQTT broker: {e}")
 
