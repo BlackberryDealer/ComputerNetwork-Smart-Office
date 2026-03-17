@@ -15,6 +15,8 @@ const connectOptions = {
   clean: true,
   reconnectPeriod: 2000,
   connectTimeout: 30 * 1000,
+  protocolVersion: 4,      // Use MQTT 3.1.1 (standard)
+  handshakeTimeout: 20000, // Allow more time for initial handshake on RPi
 }
 
 const pubClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: `node-pub-${Math.random().toString(16).slice(2)}` })
