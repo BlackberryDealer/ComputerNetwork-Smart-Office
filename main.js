@@ -42,10 +42,16 @@ const io = new SocketIOServer(httpServer)
 app.use(express.json())
 app.use(express.urlencoded({ extended: false }))
 
+app.use(express.static('dist'))
 app.use(express.static('public'))
 
+import fs from 'fs'
 app.get('/', (req, res) => {
-  res.sendFile('index.html')
+  if (fs.existsSync('dist/index.html')) {
+    res.sendFile('index.html', { root: 'dist' })
+  } else {
+    res.sendFile('index.html', { root: 'public' })
+  }
 })
 
 // Helper functions to get latest data from Redis

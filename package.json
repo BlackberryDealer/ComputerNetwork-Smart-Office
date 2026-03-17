@@ -16,15 +16,27 @@
   "main": "main.js",
   "scripts": {
     "start": "node main.js",
+    "dev:frontend": "vite",
+    "build": "vite build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
     "aedes": "^1.0.1",
+    "chart.js": "^4.4.2",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "lucide-react": "^0.364.0",
     "mqtt": "^5.15.0",
+    "react": "^18.2.0",
+    "react-chartjs-2": "^5.2.0",
+    "react-dom": "^18.2.0",
     "redis": "^5.11.0",
     "redis-om": "^0.4.7",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.2.8"
   }
 }
