@@ -145,8 +145,7 @@ subClient.on('connect', () => {
 })
 
 async function saveToRedis(topic, payload) {
-  const now = new Date()
-  const ts = payload.ts ? new Date(payload.ts) : now
+  const ts = new Date() // Force server time since external nodes may lack RTCs and have unsynced clocks.
   let saved = false
 
   if (payload.temperature !== undefined || payload.temp !== undefined) {

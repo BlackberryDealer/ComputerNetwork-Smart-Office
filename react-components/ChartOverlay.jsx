@@ -18,6 +18,11 @@ const ChartOverlay = () => {
       const res = await fetch('/api/chart-data');
       const data = await res.json();
       
+      if (!data || !data.temperature || !data.acEvents) {
+        console.error("Invalid data format received:", data);
+        return;
+      }
+      
       const labels = [];
       const tempPoints = [];
       const acPoints = [];
@@ -27,9 +32,12 @@ const ChartOverlay = () => {
         tempPoints.push(t.temp);
         
         // Find nearest AC event status
-        const closestAc = data.acEvents.reduce((prev, curr) => {
-          return (Math.abs(new Date(curr.timestamp) - new Date(t.timestamp)) < Math.abs(new Date(prev.timestamp) - new Date(t.timestamp)) ? curr : prev);
-        }, { status: 0 }); // default to 0 OFF if nothing found
+        let closestAc = { status: 0 };
+        if (data.acEvents.length > 0) {
+          closestAc = data.acEvents.reduce((prev, curr) => {
+            return (Math.abs(new Date(curr.timestamp) - new Date(t.timestamp)) < Math.abs(new Date(prev.timestamp) - new Date(t.timestamp)) ? curr : prev);
+          });
+        }
 
         acPoints.push(closestAc ? closestAc.status : 0);
       });
