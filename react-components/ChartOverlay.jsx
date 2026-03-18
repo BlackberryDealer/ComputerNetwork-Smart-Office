@@ -8,26 +8,9 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 const socket = io();
 
 const ChartOverlay = () => {
-  // 1. Initialize with the proper structure so Chart.js doesn't crash on load
   const [chartData, setChartData] = useState({
     labels: [],
-    datasets: [
-      {
-        label: 'Temperature (°C)',
-        data: [],
-        borderColor: 'rgb(255, 99, 132)',
-        backgroundColor: 'rgba(255, 99, 132, 0.5)',
-        yAxisID: 'y'
-      },
-      {
-        label: 'AC Status (0=OFF, 1=SLOW, 2=FAST)',
-        data: [],
-        borderColor: 'rgb(53, 162, 235)',
-        backgroundColor: 'rgba(53, 162, 235, 0.5)',
-        yAxisID: 'y1',
-        stepped: true
-      }
-    ]
+    datasets: []
   });
 
   const fetchData = async () => {
@@ -39,24 +22,16 @@ const ChartOverlay = () => {
       const tempPoints = [];
       const acPoints = [];
       
-      // 2. Defensive coding: Fallback to empty arrays if data is undefined
-      const safeAcEvents = data.acEvents || [];
-      const safeTemperatures = data.temperature || [];
-
-      // Sort AC events chronologically
-      const sortedAcEvents = safeAcEvents.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-      
-      safeTemperatures.forEach(t => {
+      data.temperature.forEach(t => {
         labels.push(new Date(t.timestamp).toLocaleTimeString());
         tempPoints.push(t.temp);
         
-        // Find the most recent AC command that happened BEFORE or AT this exact temperature reading
-        const pastAcEvents = sortedAcEvents.filter(ac => new Date(ac.timestamp) <= new Date(t.timestamp));
-        
-        // If we found previous events, take the status of the very last one. Otherwise, default to 0.
-        const currentAcStatus = pastAcEvents.length > 0 ? pastAcEvents[pastAcEvents.length - 1].status : 0;
+        // Find nearest AC event status
+        const closestAc = data.acEvents.reduce((prev, curr) => {
+          return (Math.abs(new Date(curr.timestamp) - new Date(t.timestamp)) < Math.abs(new Date(prev.timestamp) - new Date(t.timestamp)) ? curr : prev);
+        }, { status: 0 }); // default to 0 OFF if nothing found
 
-        acPoints.push(currentAcStatus);
+        acPoints.push(closestAc ? closestAc.status : 0);
       });
 
       setChartData({
@@ -74,13 +49,12 @@ const ChartOverlay = () => {
             data: acPoints,
             borderColor: 'rgb(53, 162, 235)',
             backgroundColor: 'rgba(53, 162, 235, 0.5)',
-            yAxisID: 'y1',
-            stepped: true 
+            yAxisID: 'y1'
           }
         ]
       });
     } catch (e) {
-      console.error("Failed to fetch or parse chart data:", e);
+      console.error(e);
     }
   };
 
