@@ -22,16 +22,20 @@ const ChartOverlay = () => {
       const tempPoints = [];
       const acPoints = [];
       
+      // Sort AC events chronologically (oldest to newest)
+      const sortedAcEvents = data.acEvents.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      
       data.temperature.forEach(t => {
         labels.push(new Date(t.timestamp).toLocaleTimeString());
         tempPoints.push(t.temp);
         
-        // Find nearest AC event status
-        const closestAc = data.acEvents.reduce((prev, curr) => {
-          return (Math.abs(new Date(curr.timestamp) - new Date(t.timestamp)) < Math.abs(new Date(prev.timestamp) - new Date(t.timestamp)) ? curr : prev);
-        }, { status: 0 }); // default to 0 OFF if nothing found
+        // Find the most recent AC command that happened BEFORE or AT this exact temperature reading
+        const pastAcEvents = sortedAcEvents.filter(ac => new Date(ac.timestamp) <= new Date(t.timestamp));
+        
+        // If we found previous events, take the status of the very last one. Otherwise, default to 0.
+        const currentAcStatus = pastAcEvents.length > 0 ? pastAcEvents[pastAcEvents.length - 1].status : 0;
 
-        acPoints.push(closestAc ? closestAc.status : 0);
+        acPoints.push(currentAcStatus);
       });
 
       setChartData({
@@ -49,7 +53,8 @@ const ChartOverlay = () => {
             data: acPoints,
             borderColor: 'rgb(53, 162, 235)',
             backgroundColor: 'rgba(53, 162, 235, 0.5)',
-            yAxisID: 'y1'
+            yAxisID: 'y1',
+            stepped: true // Makes the AC status jump cleanly between 0, 1, and 2 like a real switch
           }
         ]
       });
