@@ -9,7 +9,7 @@ import {
   motionRepository,
 } from './config/redisRepository.js'
 import redisClient from './config/redis.js'
-import { publishSensorData, deviceOverrides } from './mqtt.js'
+import { publishSensorData, deviceOverrides, nodeStatus } from './mqtt.js'
 import { EntityId } from 'redis-om'
 import { Server as SocketIOServer } from 'socket.io'
 import './mqtt.js' // Ensure MQTT client is initialized and connected
@@ -199,6 +199,10 @@ app.get('/api/chart-data', async (req, res) => {
 
 app.get('/api/overrides', (req, res) => {
   res.json(deviceOverrides);
+});
+
+app.get('/api/nodes', (req, res) => {
+  res.json(nodeStatus);
 });
 
 app.post('/api/overrides', (req, res) => {

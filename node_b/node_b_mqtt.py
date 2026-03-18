@@ -17,15 +17,21 @@ ac_servo = Servo(12, pin_factory=factory)
 # Network Configuration (Must point to Node C!)
 BROKER_IP = "10.137.164.56" # <--- Change this to Node C's Wi-Fi IP
 COMMAND_TOPIC = "office/commands/node_b"
+STATUS_TOPIC = "smartoffice/status/node_b"
 
 # Global Variables
 ac_mode = "OFF"
 last_msg_time = {k: time.time() for k in ["LED_1", "LED_2", "LED_3", "AC"]}
 timeout_triggered = {k: False for k in ["LED_1", "LED_2", "LED_3", "AC"]}
 
+# Will and Testament logic
+lwt_payload = json.dumps({"node": "Node B", "status": "offline"})
+online_payload = json.dumps({"node": "Node B", "status": "online"})
+
 def on_connect(client, userdata, flags, rc):
     print(f"Connected to Node C Broker on {BROKER_IP}")
     client.subscribe(COMMAND_TOPIC)
+    client.publish(STATUS_TOPIC, online_payload, retain=True)
     print(f"Listening for commands on: {COMMAND_TOPIC}")
 
 def on_message(client, userdata, msg):
@@ -61,6 +67,7 @@ def on_message(client, userdata, msg):
 
 # Initialize MQTT Client
 client = mqtt.Client()
+client.will_set(STATUS_TOPIC, payload=lwt_payload, qos=1, retain=True)
 client.on_connect = on_connect
 client.on_message = on_message
 

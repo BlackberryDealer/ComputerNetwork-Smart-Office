@@ -37,6 +37,12 @@ export const deviceOverrides = {
   LED_3: null
 };
 
+export const nodeStatus = {
+  node_a: 'offline',
+  node_b: 'offline',
+  server: 'online'
+};
+
 function sendCommand(device_id, command) {
   if (deviceOverrides[device_id]) return; // Blocked by override
   publishSensorData(COMMAND_TOPIC, { device_id, command });
@@ -128,7 +134,7 @@ function updateAC() {
 
 subClient.on('connect', () => {
   console.log('[MQTT SUB] connected to broker', brokerUrl)
-  const topics = ['smartoffice/sensors', 'smartoffice/#', 'redis/#', 'node_b/#']
+  const topics = ['smartoffice/sensors', 'smartoffice/#', 'redis/#', 'node_b/#', 'office/#']
   subClient.subscribe(topics, { qos: 0 }, (err, granted) => {
     if (err) {
       console.error('[MQTT SUB] subscribe error', err)
@@ -162,7 +168,7 @@ async function saveToRedis(topic, payload) {
     saved = true
   }
 
-  if (topic.startsWith('smartoffice/') || topic.startsWith('node_b/')) {
+  if (topic.startsWith('smartoffice/') || topic.startsWith('node_b/') || topic.startsWith('office/')) {
     const zone = payload.zone !== undefined ? Number(payload.zone) : undefined
     const temp = payload.temp !== undefined ? Number(payload.temp) : undefined
     const status = payload.status ? String(payload.status) : undefined
@@ -187,6 +193,13 @@ subClient.on('message', async (topic, message) => {
     // Evaluate rules only for real sensor data, not our own Redis replays
     if (!topic.startsWith('redis/')) {
       evaluateSmartRules(parsed);
+    }
+    
+    if (topic.startsWith('smartoffice/status/')) {
+      const nodeId = topic.split('/').pop()
+      if (parsed.status) {
+        nodeStatus[nodeId] = parsed.status;
+      }
     }
 
     await saveToRedis(topic, parsed)

@@ -34,6 +34,14 @@ const NetworkMap = () => {
   };
 
   useEffect(() => {
+    // Initial fetch to get currently connected devices
+    fetch('/api/nodes')
+      .then(r => r.json())
+      .then(data => {
+        setNodes(prev => ({ ...prev, ...data }));
+      })
+      .catch(console.error);
+
     socket.on('sensor-update', (data) => {
       if (!data.topic) return;
 
