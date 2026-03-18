@@ -8,9 +8,26 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 const socket = io();
 
 const ChartOverlay = () => {
+  // 1. Initialize with the proper structure so Chart.js doesn't crash on load
   const [chartData, setChartData] = useState({
     labels: [],
-    datasets: []
+    datasets: [
+      {
+        label: 'Temperature (°C)',
+        data: [],
+        borderColor: 'rgb(255, 99, 132)',
+        backgroundColor: 'rgba(255, 99, 132, 0.5)',
+        yAxisID: 'y'
+      },
+      {
+        label: 'AC Status (0=OFF, 1=SLOW, 2=FAST)',
+        data: [],
+        borderColor: 'rgb(53, 162, 235)',
+        backgroundColor: 'rgba(53, 162, 235, 0.5)',
+        yAxisID: 'y1',
+        stepped: true
+      }
+    ]
   });
 
   const fetchData = async () => {
@@ -22,10 +39,14 @@ const ChartOverlay = () => {
       const tempPoints = [];
       const acPoints = [];
       
-      // Sort AC events chronologically (oldest to newest)
-      const sortedAcEvents = data.acEvents.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      // 2. Defensive coding: Fallback to empty arrays if data is undefined
+      const safeAcEvents = data.acEvents || [];
+      const safeTemperatures = data.temperature || [];
+
+      // Sort AC events chronologically
+      const sortedAcEvents = safeAcEvents.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
       
-      data.temperature.forEach(t => {
+      safeTemperatures.forEach(t => {
         labels.push(new Date(t.timestamp).toLocaleTimeString());
         tempPoints.push(t.temp);
         
@@ -54,12 +75,12 @@ const ChartOverlay = () => {
             borderColor: 'rgb(53, 162, 235)',
             backgroundColor: 'rgba(53, 162, 235, 0.5)',
             yAxisID: 'y1',
-            stepped: true // Makes the AC status jump cleanly between 0, 1, and 2 like a real switch
+            stepped: true 
           }
         ]
       });
     } catch (e) {
-      console.error(e);
+      console.error("Failed to fetch or parse chart data:", e);
     }
   };
 
