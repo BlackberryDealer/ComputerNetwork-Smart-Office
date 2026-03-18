@@ -1,53 +1,52 @@
-import time
-import json
 import paho.mqtt.client as mqtt
+import json
+import time
 import random
+from datetime import datetime
 
-# # --- MQTT SETUP ---
-BROKER_IP = "192.168.0.15"  
-BROKER_PORT = 1883
+# Configuration
+BROKER_IP = "127.0.0.1"
 TOPIC = "smartoffice/sensors"
 
-# mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-# # try:
-# #     mqtt_client.connect(BROKER_IP, BROKER_PORT, 60)
-# #     mqtt_client.loop_start()  
-# #     print(f"Connected to MQTT Broker at {BROKER_IP}")
-# # except Exception as e:
-# #     print(f"Failed to connect to MQTT broker: {e}")
+client = mqtt.Client()
 
-# def publish_data(data_dict):
-#     try:
-#         json_payload = json.dumps(data_dict)
-#         mqtt_client.publish(TOPIC, json_payload)
-#     except Exception as e:
-#         print(f"Failed to publish: {e}")
+def send_packet(data):
+    payload = json.dumps(data)
+    client.publish(TOPIC, payload)
+    print(f"[SENT] {payload}")
 
-# def main():
-#     try:
-#         while True:
-#             pass
-#     except KeyboardInterrupt:
-#         print("\nExiting gracefully.")
-#     # finally:
-#     #     # Safely clean up network and pins ONLY upon closing the program
-#     #     mqtt_client.loop_stop()
-#     #     mqtt_client.disconnect()
-mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+try:
+    client.connect(BROKER_IP, 1883, 60)
+    print(f"Connected to local broker. Sending fake data to '{TOPIC}'...")
 
-mqtt_client.connect(BROKER_IP, BROKER_PORT)
-mqtt_client.loop_start()
+    while True:
+        # 1. Simulate Climate Data (Every 5 seconds)
+        # AC Logic: SLOW < 25.5°C, FAST > 25.5°C
+        fake_temp = round(random.uniform(22.0, 28.0), 1)
+        climate_data = {
+            "type": "climate",
+            "temp": fake_temp,
+            "humidity": random.randint(40, 60),
+            "timestamp": datetime.now().isoformat()
+        }
+        send_packet(climate_data)
 
-for i in range(1, 61):
-    message = f"Sending data number of times: {i}"
-    json_payload = json.dumps({
-        "motion": True,
-        "temperature": random.randint(25, 39),
-        "humidity": random.randint(70, 95)
-    })
-    mqtt_client.publish(TOPIC, json_payload)
-    print(f"Published: {message}")
-    time.sleep(1)
+        # 2. Simulate Motion Data
+        # Logic: If all false, AC turns OFF after timeout
+        motion_data = {
+            "type": "periodic_motion",
+            "states": {
+                "zone_1": random.choice([True, False]),
+                "zone_2": random.choice([True, False]),
+                "zone_3": random.choice([True, False])
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        send_packet(motion_data)
 
-mqtt_client.loop_stop()
-mqtt_client.disconnect()
+        print("-" * 30)
+        time.sleep(5)
+
+except KeyboardInterrupt:
+    print("Simulation stopped.")
+    client.disconnect()

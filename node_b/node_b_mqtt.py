@@ -73,9 +73,19 @@ try:
     direction = 1
     step = 0.05
     
+    last_ping_time = 0 # <-- ADD THIS before the loop
+
     while True:
-        # Check for timeout per device
         current_time = time.time()
+
+        # --- ADD THIS NEW HEARTBEAT BLOCK ---
+        # Publish a heartbeat every 5 seconds so the dashboard knows Node B is alive
+        if current_time - last_ping_time > 5:
+            client.publish("smartoffice/status/node_b", json.dumps({"status": "online"}))
+            last_ping_time = current_time
+        # ------------------------------------
+
+        # Check for timeout per device
         for dev_id in leds:
             if current_time - last_msg_time[dev_id] > 10 and not timeout_triggered[dev_id]:
                 print(f"Timeout: No commands for {dev_id} for 10 seconds. Turning OFF.")

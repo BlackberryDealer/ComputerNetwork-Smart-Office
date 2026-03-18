@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { Wifi, Server, Activity, Cpu } from 'lucide-react';
 
@@ -6,27 +6,64 @@ const socket = io();
 
 const NetworkMap = () => {
   const [nodes, setNodes] = useState({
-    server: 'online',
-    node_a: 'offline', // Sensors
-    node_b: 'offline', // Actuators
-    node_c: 'offline'
+    server: 'online', // Always online if the dashboard is rendering
+    node_a: 'offline', 
+    node_b: 'offline', 
+    node_c: 'online'  
   });
+
+  // Use refs to store the timeout IDs so we can clear/reset them
+  const timeouts = useRef({
+    node_a: null,
+    node_b: null
+  });
+
+  // Helper function to handle the 10-second heartbeat
+  const markNodeActive = (nodeId) => {
+    setNodes((prev) => ({ ...prev, [nodeId]: 'online' }));
+
+    // Clear the existing countdown
+    if (timeouts.current[nodeId]) {
+      clearTimeout(timeouts.current[nodeId]);
+    }
+
+    // Start a fresh 10-second countdown to mark it offline
+    timeouts.current[nodeId] = setTimeout(() => {
+      setNodes((prev) => ({ ...prev, [nodeId]: 'offline' }));
+    }, 10000);
+  };
 
   useEffect(() => {
     socket.on('sensor-update', (data) => {
-      // Listen for LWT messages under 'smartoffice/status/+'
-      if (data.topic && data.topic.startsWith('smartoffice/status/')) {
+      if (!data.topic) return;
+
+      // 1. Check for Node A activity (Sensor packets)
+      if (data.topic.startsWith('smartoffice/sensors')) {
+        markNodeActive('node_a');
+      }
+
+      // 2. Check for Node B activity (Heartbeat packets)
+      if (data.topic.startsWith('smartoffice/status/node_b')) {
+        markNodeActive('node_b');
+      }
+
+      // 3. Keep the original LWT (Last Will & Testament) logic just in case
+      if (data.topic.startsWith('smartoffice/status/')) {
         const nodeId = data.topic.split('/').pop();
-        if (data.payload && data.payload.status) {
-          setNodes(prev => ({
-            ...prev,
-            [nodeId]: data.payload.status
-          }));
+        if (data.payload && data.payload.status === 'offline') {
+          setNodes((prev) => ({ ...prev, [nodeId]: 'offline' }));
+          if (timeouts.current[nodeId]) clearTimeout(timeouts.current[nodeId]);
+        } else if (data.payload && data.payload.status === 'online') {
+           markNodeActive(nodeId);
         }
       }
     });
 
-    return () => socket.off('sensor-update');
+    return () => {
+      socket.off('sensor-update');
+      // Cleanup all timeouts when the component unmounts
+      Object.values(timeouts.current).forEach(clearTimeout);
+    };
   }, []);
 
   const getNodeColor = (status) => status === 'online' ? '#22c55e' : '#ef4444';
@@ -38,7 +75,7 @@ const NetworkMap = () => {
         padding: '1.5rem',
         borderRadius: '50%',
         boxShadow: `0 0 15px ${getNodeColor(status)}`,
-        transition: 'box-shadow 0.3s'
+        transition: 'box-shadow 0.3s, border-color 0.3s'
       }}>
         <Icon color={getNodeColor(status)} size={40} />
       </div>
@@ -53,7 +90,6 @@ const NetworkMap = () => {
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '3rem' }}>
         <NodeIcon icon={Activity} label="Node A (Sensors)" status={nodes.node_a} />
         
-        {/* Router Context */ }
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <div style={{ backgroundColor: '#2563eb', padding: '2rem', borderRadius: '1rem' }}>
             <Wifi color="#fff" size={48} />
