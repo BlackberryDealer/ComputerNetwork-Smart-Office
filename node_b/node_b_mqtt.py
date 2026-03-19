@@ -86,8 +86,8 @@ try:
         current_time = time.time()
 
         # --- ADD THIS NEW HEARTBEAT BLOCK ---
-        # Publish a heartbeat every 5 seconds so the dashboard knows Node B is alive
-        if current_time - last_ping_time > 5:
+        # Publish a heartbeat every 2 seconds so the dashboard knows Node B is alive
+        if current_time - last_ping_time > 2:
             client.publish("smartoffice/status/node_b", json.dumps({"status": "online"}))
             last_ping_time = current_time
         # ------------------------------------

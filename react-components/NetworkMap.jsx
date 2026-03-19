@@ -27,10 +27,10 @@ const NetworkMap = () => {
       clearTimeout(timeouts.current[nodeId]);
     }
 
-    // Start a fresh 10-second countdown to mark it offline
+    // Start a fresh 15-second countdown to mark it offline
     timeouts.current[nodeId] = setTimeout(() => {
       setNodes((prev) => ({ ...prev, [nodeId]: 'offline' }));
-    }, 10000);
+    }, 15000);
   };
 
   useEffect(() => {
