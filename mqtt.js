@@ -130,6 +130,28 @@ function updateAC() {
   let acCommand = currentTemp > 25.5 ? 'FAST' : 'SLOW';
   sendCommand('AC', acCommand);
 }
+export function reevaluateState() {
+  if (presentationMode) {
+    publishSensorData(COMMAND_TOPIC, { device_id: 'LED_1', command: deviceOverrides['LED_1'] || 'OFF' });
+    publishSensorData(COMMAND_TOPIC, { device_id: 'LED_2', command: deviceOverrides['LED_2'] || 'OFF' });
+    publishSensorData(COMMAND_TOPIC, { device_id: 'LED_3', command: deviceOverrides['LED_3'] || 'OFF' });
+    publishSensorData(COMMAND_TOPIC, { device_id: 'AC', command: deviceOverrides['AC'] || 'SLOW' });
+    return;
+  }
+  
+  for (let i = 1; i <= 3; i++) {
+    const state = deviceOverrides[`LED_${i}`] || (activeZones[i] ? 'ON' : 'OFF');
+    publishSensorData(COMMAND_TOPIC, { device_id: `LED_${i}`, command: state });
+  }
+  
+  const isOccupied = Object.values(activeZones).some(timer => timer !== null);
+  let acCmd = 'OFF';
+  if (isOccupied) {
+    acCmd = currentTemp > 25.5 ? 'FAST' : 'SLOW';
+  }
+  publishSensorData(COMMAND_TOPIC, { device_id: 'AC', command: deviceOverrides['AC'] || acCmd });
+}
+
 // --- END SMART OFFICE DECISION ENGINE ---
 
 subClient.on('connect', () => {
@@ -270,4 +292,5 @@ setInterval(() => {
   publishFromRedis().catch((err) => {
     console.error('[MQTT PUB] periodic publish error', err)
   })
+  reevaluateState()
 }, 5000)

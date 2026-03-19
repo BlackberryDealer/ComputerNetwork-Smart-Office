@@ -9,7 +9,7 @@ import {
   motionRepository,
 } from './config/redisRepository.js'
 import redisClient from './config/redis.js'
-import { publishSensorData, deviceOverrides, nodeStatus } from './mqtt.js'
+import { publishSensorData, deviceOverrides, nodeStatus, reevaluateState } from './mqtt.js'
 import { EntityId } from 'redis-om'
 import { Server as SocketIOServer } from 'socket.io'
 import './mqtt.js' // Ensure MQTT client is initialized and connected
@@ -211,6 +211,7 @@ app.post('/api/overrides', (req, res) => {
   
   if (command === 'AUTO' || command === null) {
     deviceOverrides[device_id] = null;
+    reevaluateState();
     res.json({ success: true, mode: 'AUTO', device_id });
   } else {
     deviceOverrides[device_id] = command;

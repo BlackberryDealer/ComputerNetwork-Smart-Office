@@ -106,7 +106,7 @@ try:
 
         # Continuous AC Servo Sweeping (No timers, purely based on ac_mode state)
         if ac_mode == "OFF":
-            time.sleep(0.5) 
+            time.sleep(0.05) 
         else:
             delay = 0.01 if ac_mode == "FAST" else 0.05
             
