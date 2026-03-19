@@ -122,6 +122,8 @@ try:
 except KeyboardInterrupt:
     print("\nShutting down Node B")
 finally:
+    # Publish offline status if shutdown gracefully
+    client.publish(STATUS_TOPIC, lwt_payload, retain=True)
     client.loop_stop()
     for key in leds:
         leds[key].close()

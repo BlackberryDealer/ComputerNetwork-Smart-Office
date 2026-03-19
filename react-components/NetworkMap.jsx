@@ -39,6 +39,12 @@ const NetworkMap = () => {
       .then(r => r.json())
       .then(data => {
         setNodes(prev => ({ ...prev, ...data }));
+        // Start timers for any nodes fetched as 'online' 
+        Object.keys(data).forEach(nodeId => {
+          if (data[nodeId] === 'online' && nodeId !== 'server') {
+            markNodeActive(nodeId);
+          }
+        });
       })
       .catch(console.error);
 

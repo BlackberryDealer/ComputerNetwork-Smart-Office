@@ -103,6 +103,8 @@ try:
 except KeyboardInterrupt:
     print("\nExiting gracefully.")
 finally:
+    # Explicitly publish offline status if shut down gracefully
+    mqtt_client.publish(STATUS_TOPIC, lwt_payload, retain=True)
     mqtt_client.loop_stop()
     mqtt_client.disconnect()
     GPIO.cleanup()
