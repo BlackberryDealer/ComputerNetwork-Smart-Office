@@ -155,48 +155,79 @@ const ChartOverlay = () => {
           />
         </div>
 
-        {/* Chart 3: Motion detection (Topology-like visual using multi-line/area) */}
-        <div style={{ height: '240px' }}>
-          <h4 style={{ margin: '0 0 0.5rem 0', color: '#4b5563', fontSize: '0.9rem' }}>Motion Detected Topology</h4>
-          <Line 
-            options={{
-              ...commonOptions, 
-              plugins: { legend: { display: true, position: 'top', labels: { usePointStyle: true, boxWidth: 6 } } },
-              scales: { ...commonOptions.scales, y: { type: 'linear', display: true, position: 'left', min: 0, max: 1.2, ticks: { stepSize: 1 } } }
-            }} 
-            data={{
-              labels: chartData.labels,
-              datasets: [
-                {
-                  label: 'Room 1 (Zone 1)',
-                  data: chartData.motionPoints1,
-                  borderColor: '#10b981',
-                  backgroundColor: '#10b98122',
-                  fill: true,
-                  stepped: true,
-                  borderWidth: 2
-                },
-                {
-                  label: 'Room 2 (Zone 2)',
-                  data: chartData.motionPoints2,
-                  borderColor: '#f59e0b',
-                  backgroundColor: '#f59e0b22',
-                  fill: true,
-                  stepped: true,
-                  borderWidth: 2
-                },
-                {
-                  label: 'Room 3 (Zone 3)',
-                  data: chartData.motionPoints3,
-                  borderColor: '#8b5cf6',
-                  backgroundColor: '#8b5cf622',
-                  fill: true,
-                  stepped: true,
-                  borderWidth: 2
+        {/* Chart 3: Motion detection (Live Topology + Historical Stacked Area) */}
+        <div style={{ padding: '1.5rem', backgroundColor: '#f9fafb', borderRadius: '1rem' }}>
+          <h4 style={{ margin: '0 0 1rem 0', color: '#1f2937', fontSize: '1rem' }}>Live Room Occupancy (Topology)</h4>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+            {[
+              { id: 1, name: 'Room 1', active: chartData.motionPoints1[chartData.motionPoints1.length - 1] === 1, color: '#10b981' },
+              { id: 2, name: 'Room 2', active: chartData.motionPoints2[chartData.motionPoints2.length - 1] === 1, color: '#f59e0b' },
+              { id: 3, name: 'Room 3', active: chartData.motionPoints3[chartData.motionPoints3.length - 1] === 1, color: '#8b5cf6' }
+            ].map(room => (
+              <div key={room.name} style={{
+                padding: '1.5rem 1rem',
+                borderRadius: '0.8rem',
+                backgroundColor: room.active ? room.color : '#e5e7eb',
+                color: room.active ? '#fff' : '#6b7280',
+                textAlign: 'center',
+                transition: 'all 0.3s ease',
+                boxShadow: room.active ? `0 0 20px ${room.color}66` : 'none',
+                transform: room.active ? 'scale(1.02)' : 'scale(1)'
+              }}>
+                <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{room.name}</div>
+                <div style={{ fontSize: '0.85rem', textTransform: 'uppercase', marginTop: '0.5rem', fontWeight: 600, letterSpacing: '0.05em' }}>
+                  {room.active ? 'Occupied' : 'Empty'}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <h4 style={{ margin: '0 0 1rem 0', color: '#4b5563', fontSize: '0.9rem' }}>Historical Motion Activity (Stacked)</h4>
+          <div style={{ height: '200px' }}>
+            <Line 
+              options={{
+                ...commonOptions, 
+                plugins: { legend: { display: true, position: 'top', labels: { usePointStyle: true, boxWidth: 6 } } },
+                scales: { 
+                  x: { ...commonOptions.scales.x },
+                  y: { stacked: true, type: 'linear', display: true, position: 'left', min: 0, max: 3, ticks: { stepSize: 1 } } 
                 }
-              ]
-            }} 
-          />
+              }} 
+              data={{
+                labels: chartData.labels,
+                datasets: [
+                  {
+                    label: 'Room 1',
+                    data: chartData.motionPoints1,
+                    borderColor: '#10b981',
+                    backgroundColor: '#10b981aa',
+                    fill: true,
+                    stepped: true,
+                    borderWidth: 1
+                  },
+                  {
+                    label: 'Room 2',
+                    data: chartData.motionPoints2,
+                    borderColor: '#f59e0b',
+                    backgroundColor: '#f59e0baa',
+                    fill: true,
+                    stepped: true,
+                    borderWidth: 1
+                  },
+                  {
+                    label: 'Room 3',
+                    data: chartData.motionPoints3,
+                    borderColor: '#8b5cf6',
+                    backgroundColor: '#8b5cf6aa',
+                    fill: true,
+                    stepped: true,
+                    borderWidth: 1
+                  }
+                ]
+              }} 
+            />
+          </div>
         </div>
       </div>
     </div>
