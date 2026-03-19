@@ -27,15 +27,19 @@ const ChartOverlay = () => {
       const tempPoints = [];
       const acPoints = [];
       
-      data.temperature.forEach(t => {
+      // Parse dates once to avoid massive GC hangs inside the loops
+      const parsedTemps = data.temperature.map(t => ({...t, timeMs: new Date(t.timestamp).getTime()}));
+      const parsedAc = data.acEvents.map(a => ({...a, timeMs: new Date(a.timestamp).getTime()}));
+      
+      parsedTemps.forEach(t => {
         labels.push(new Date(t.timestamp).toLocaleTimeString());
         tempPoints.push(t.temp);
         
         // Find nearest AC event status
         let closestAc = { status: 0 };
-        if (data.acEvents.length > 0) {
-          closestAc = data.acEvents.reduce((prev, curr) => {
-            return (Math.abs(new Date(curr.timestamp) - new Date(t.timestamp)) < Math.abs(new Date(prev.timestamp) - new Date(t.timestamp)) ? curr : prev);
+        if (parsedAc.length > 0) {
+          closestAc = parsedAc.reduce((prev, curr) => {
+            return (Math.abs(curr.timeMs - t.timeMs) < Math.abs(prev.timeMs - t.timeMs) ? curr : prev);
           });
         }
 
@@ -68,14 +72,22 @@ const ChartOverlay = () => {
 
   useEffect(() => {
     fetchData();
-    socket.on('sensor-update', (data) => {
+    let timeoutId;
+    
+    const handleUpdate = (data) => {
       // Whenever there is a new temperature reading or AC event, update chart
       if (data.topic === 'smartoffice/sensors' || data.topic === 'office/commands/node_b') {
-        fetchData();
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => fetchData(), 300);
       }
-    });
+    };
+    
+    socket.on('sensor-update', handleUpdate);
 
-    return () => socket.off('sensor-update');
+    return () => {
+      socket.off('sensor-update', handleUpdate);
+      clearTimeout(timeoutId);
+    };
   }, []);
 
   const options = {
