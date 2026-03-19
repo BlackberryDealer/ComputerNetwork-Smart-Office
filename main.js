@@ -9,7 +9,7 @@ import {
   motionRepository,
 } from './config/redisRepository.js'
 import redisClient from './config/redis.js'
-import { publishSensorData, deviceOverrides, nodeStatus, reevaluateState, getPresentationMode, setPresentationMode } from './mqtt.js'
+import { publishSensorData, deviceOverrides, nodeStatus, reevaluateState, getPresentationMode, setPresentationMode, activeCommands } from './mqtt.js'
 import { EntityId } from 'redis-om'
 import { Server as SocketIOServer } from 'socket.io'
 import './mqtt.js' // Ensure MQTT client is initialized and connected
@@ -149,12 +149,16 @@ app.get('/api/analytics', async (req, res) => {
   try {
     const ghostEvents = await redisClient.get('analytics:ghost_events') || 0;
     const timeSavedHours = await redisClient.get('analytics:time_saved_hours') || 0;
+    const acTimeSavedHours = await redisClient.get('analytics:ac_time_saved_hours') || 0;
+    
     // EnergySaved = (TimeSavedInHours * 50W) / 1000
     const energySavedKWh = (parseFloat(timeSavedHours) * 50) / 1000;
+    const acEnergySavedKWh = (parseFloat(acTimeSavedHours) * 750) / 1000; // 750W for AC
     
     res.json({
       automated_corrections: parseInt(ghostEvents, 10),
-      estimated_savings_kwh: energySavedKWh.toFixed(4)
+      estimated_savings_kwh: energySavedKWh.toFixed(4),
+      estimated_ac_savings_kwh: acEnergySavedKWh.toFixed(4)
     });
   } catch (err) {
     console.error('Error fetching analytics:', err);
@@ -207,6 +211,10 @@ app.get('/api/chart-data', async (req, res) => {
     console.error('Error fetching chart data:', err);
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+app.get('/api/active-commands', (req, res) => {
+  res.json({ ...activeCommands, PRESENTATION: getPresentationMode() ? 'ON' : 'OFF' });
 });
 
 app.get('/api/overrides', (req, res) => {

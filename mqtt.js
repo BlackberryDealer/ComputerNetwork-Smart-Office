@@ -29,6 +29,21 @@ const zoneOffTimestamps = { 1: null, 2: null, 3: null };
 const MOTION_TIMEOUT = 5000; // 5 seconds timeout for LEDs
 let currentTemp = 24.0;
 let presentationMode = false;
+let acOffTimestamp = null;
+
+export const activeCommands = {
+  AC: 'OFF',
+  LED_1: 'OFF',
+  LED_2: 'OFF',
+  LED_3: 'OFF'
+};
+
+function trackAndPublish(device_id, command) {
+  if (activeCommands[device_id] !== command) {
+    activeCommands[device_id] = command;
+  }
+  publishSensorData(COMMAND_TOPIC, { device_id, command });
+}
 
 export function getPresentationMode() {
   return presentationMode;
@@ -64,8 +79,8 @@ export const nodeStatus = {
 };
 
 function sendCommand(device_id, command) {
-  if (deviceOverrides[device_id]) return; // Blocked by override
-  publishSensorData(COMMAND_TOPIC, { device_id, command });
+  if (deviceOverrides[device_id] !== null && deviceOverrides[device_id] !== 'AUTO') return; 
+  trackAndPublish(device_id, command);
 }
 
 function evaluateSmartRules(payload) {
@@ -95,6 +110,15 @@ function evaluateSmartRules(payload) {
             redisClient.incrByFloat('analytics:time_saved_hours', hours).catch(e => console.error(e));
           }
           zoneOffTimestamps[i] = null;
+        }
+
+        if (acOffTimestamp) {
+          const acTimeOffMs = Date.now() - acOffTimestamp;
+          const acHours = acTimeOffMs / (1000 * 60 * 60);
+          if (acHours > 0) {
+            redisClient.incrByFloat('analytics:ac_time_saved_hours', acHours).catch(e => console.error(e));
+          }
+          acOffTimestamp = null;
         }
 
         sendCommand(`LED_${i}`, 'ON');
@@ -127,6 +151,9 @@ function evaluateSmartRules(payload) {
 function checkOverallOccupancy() {
   const isOccupied = Object.values(activeZones).some(timer => timer !== null);
   if (!isOccupied && !presentationMode) {
+    if (!acOffTimestamp && activeCommands['AC'] !== 'OFF') {
+      acOffTimestamp = Date.now();
+    }
     console.log('[Smart Logic] Entire office is empty. AC Auto-OFF.');
     sendCommand('AC', 'OFF');
   }
@@ -144,16 +171,16 @@ function updateAC() {
 }
 export function reevaluateState() {
   if (presentationMode) {
-    publishSensorData(COMMAND_TOPIC, { device_id: 'LED_1', command: deviceOverrides['LED_1'] || 'OFF' });
-    publishSensorData(COMMAND_TOPIC, { device_id: 'LED_2', command: deviceOverrides['LED_2'] || 'OFF' });
-    publishSensorData(COMMAND_TOPIC, { device_id: 'LED_3', command: deviceOverrides['LED_3'] || 'OFF' });
-    publishSensorData(COMMAND_TOPIC, { device_id: 'AC', command: deviceOverrides['AC'] || 'SLOW' });
+    trackAndPublish('LED_1', (deviceOverrides['LED_1'] !== null && deviceOverrides['LED_1'] !== 'AUTO') ? deviceOverrides['LED_1'] : 'OFF');
+    trackAndPublish('LED_2', (deviceOverrides['LED_2'] !== null && deviceOverrides['LED_2'] !== 'AUTO') ? deviceOverrides['LED_2'] : 'OFF');
+    trackAndPublish('LED_3', (deviceOverrides['LED_3'] !== null && deviceOverrides['LED_3'] !== 'AUTO') ? deviceOverrides['LED_3'] : 'OFF');
+    trackAndPublish('AC', (deviceOverrides['AC'] !== null && deviceOverrides['AC'] !== 'AUTO') ? deviceOverrides['AC'] : 'SLOW');
     return;
   }
   
   for (let i = 1; i <= 3; i++) {
-    const state = deviceOverrides[`LED_${i}`] || (activeZones[i] ? 'ON' : 'OFF');
-    publishSensorData(COMMAND_TOPIC, { device_id: `LED_${i}`, command: state });
+    const state = (deviceOverrides[`LED_${i}`] !== null && deviceOverrides[`LED_${i}`] !== 'AUTO') ? deviceOverrides[`LED_${i}`] : (activeZones[i] ? 'ON' : 'OFF');
+    trackAndPublish(`LED_${i}`, state);
   }
   
   const isOccupied = Object.values(activeZones).some(timer => timer !== null);
@@ -161,7 +188,7 @@ export function reevaluateState() {
   if (isOccupied) {
     acCmd = currentTemp > 25.5 ? 'FAST' : 'SLOW';
   }
-  publishSensorData(COMMAND_TOPIC, { device_id: 'AC', command: deviceOverrides['AC'] || acCmd });
+  trackAndPublish('AC', (deviceOverrides['AC'] !== null && deviceOverrides['AC'] !== 'AUTO') ? deviceOverrides['AC'] : acCmd);
 }
 
 // --- END SMART OFFICE DECISION ENGINE ---

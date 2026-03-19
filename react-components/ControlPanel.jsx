@@ -8,6 +8,7 @@ const ControlPanel = () => {
     LED_3: 'AUTO',
     PRESENTATION: 'AUTO'
   });
+  const [activeStates, setActiveStates] = useState({});
   const [loading, setLoading] = useState(false);
 
   const fetchOverrides = () => {
@@ -22,6 +23,11 @@ const ControlPanel = () => {
           PRESENTATION: data.PRESENTATION || 'AUTO'
         });
       })
+      .catch(console.error);
+
+    fetch('/api/active-commands')
+      .then(res => res.json())
+      .then(data => setActiveStates(data))
       .catch(console.error);
   };
 
@@ -44,6 +50,7 @@ const ControlPanel = () => {
       const result = await res.json();
       if (result.success) {
         setOverrides(prev => ({ ...prev, [device]: result.command || 'AUTO' }));
+        fetchOverrides(); // Force quick sync of active states immediately after override
       }
     } catch (e) {
       console.error(e);
@@ -52,10 +59,25 @@ const ControlPanel = () => {
     }
   };
 
-  const ControlGroup = ({ name, deviceId, options }) => (
+  const ControlGroup = ({ name, deviceId, options }) => {
+    const currentState = activeStates[deviceId] || '...';
+    let stateColor = '#9ca3af'; // gray
+    if (currentState === 'ON' || currentState === 'FAST' || currentState === 'SLOW') stateColor = '#10b981'; // green
+    if (currentState === 'OFF') stateColor = '#ef4444'; // red
+
+    return (
     <div style={{ backgroundColor: '#fff', borderRadius: '1rem', padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', fontWeight: 600, color: '#1f2937' }}>
-        <span>{name}</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', fontWeight: 600, color: '#1f2937', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <span>{name}</span>
+          {/* Active State Indicator Dot + Label */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', padding: '0.2rem 0.6rem', backgroundColor: '#f9fafb', borderRadius: '1rem', border: '1px solid #e5e7eb' }}>
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: stateColor, boxShadow: `0 0 8px ${stateColor}aa` }} />
+            <span style={{ color: '#4b5563', fontWeight: 700 }}>
+               {currentState}
+            </span>
+          </div>
+        </div>
         <span style={{ 
           backgroundColor: overrides[deviceId] === 'AUTO' ? '#e5e7eb' : '#fef08a',
           color: overrides[deviceId] === 'AUTO' ? '#4b5563' : '#854d0e',
@@ -63,7 +85,7 @@ const ControlPanel = () => {
           borderRadius: '1rem',
           fontSize: '0.75rem',
           fontWeight: 'bold'
-        }}>{overrides[deviceId]}</span>
+        }}>{overrides[deviceId] === 'AUTO' ? 'Auto Mode' : `Forced: ${overrides[deviceId]}`}</span>
       </div>
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         {options.map(cmd => {
@@ -95,6 +117,7 @@ const ControlPanel = () => {
       </div>
     </div>
   );
+};
 
   return (
     <div style={{ marginTop: '1rem' }}>
