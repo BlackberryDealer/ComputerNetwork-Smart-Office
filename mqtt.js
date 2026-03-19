@@ -296,10 +296,7 @@ export async function publishFromRedis() {
   }
 }
 
-// Periodically publish latest Redis data to devices on network
+// Periodically evaluate state and push overrides to Actuator
 setInterval(() => {
-  publishFromRedis().catch((err) => {
-    console.error('[MQTT PUB] periodic publish error', err)
-  })
   reevaluateState()
 }, 5000)
