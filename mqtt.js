@@ -30,6 +30,25 @@ const MOTION_TIMEOUT = 5000; // 5 seconds timeout for LEDs
 let currentTemp = 24.0;
 let presentationMode = false;
 
+export function getPresentationMode() {
+  return presentationMode;
+}
+
+export function setPresentationMode(state) {
+  if (presentationMode === state) return;
+  presentationMode = state;
+  if (presentationMode) {
+    console.log('[Smart Logic] Presentation Mode ON. Dimming office.');
+    sendCommand('LED_1', 'OFF');
+    sendCommand('LED_2', 'OFF');
+    sendCommand('LED_3', 'OFF');
+    sendCommand('AC', 'SLOW');
+  } else {
+    console.log('[Smart Logic] Presentation Mode OFF. Resuming auto-sensors.');
+    updateAC();
+  }
+}
+
 export const deviceOverrides = {
   AC: null,
   LED_1: null,
@@ -51,17 +70,7 @@ function sendCommand(device_id, command) {
 function evaluateSmartRules(payload) {
   // 1. Presentation Mode Logic
   if (payload.type === 'mode' && payload.status === 'presentation') {
-    presentationMode = !presentationMode;
-    if (presentationMode) {
-      console.log('[Smart Logic] Presentation Mode ON. Dimming office.');
-      sendCommand('LED_1', 'OFF');
-      sendCommand('LED_2', 'OFF');
-      sendCommand('LED_3', 'OFF');
-      sendCommand('AC', 'SLOW');
-    } else {
-      console.log('[Smart Logic] Presentation Mode OFF. Resuming auto-sensors.');
-      updateAC(); // Re-evaluate AC based on current temp and occupancy
-    }
+    setPresentationMode(!presentationMode);
     return;
   }
 

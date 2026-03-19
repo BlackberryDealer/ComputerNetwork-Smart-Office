@@ -9,7 +9,7 @@ import {
   motionRepository,
 } from './config/redisRepository.js'
 import redisClient from './config/redis.js'
-import { publishSensorData, deviceOverrides, nodeStatus, reevaluateState } from './mqtt.js'
+import { publishSensorData, deviceOverrides, nodeStatus, reevaluateState, getPresentationMode, setPresentationMode } from './mqtt.js'
 import { EntityId } from 'redis-om'
 import { Server as SocketIOServer } from 'socket.io'
 import './mqtt.js' // Ensure MQTT client is initialized and connected
@@ -164,8 +164,9 @@ app.get('/api/analytics', async (req, res) => {
 
 app.get('/api/chart-data', async (req, res) => {
   try {
+    const minutes = parseInt(req.query.minutes) || 10;
     const since = new Date();
-    since.setHours(since.getHours() - 1); // latest hour data
+    since.setMinutes(since.getMinutes() - minutes);
 
     // Fetch temp history
     const temps = await temperatureRepository.search()
@@ -187,9 +188,20 @@ app.get('/api/chart-data', async (req, res) => {
       return { timestamp: evt.timestamp, status };
     });
 
+    // Fetch motion events
+    const motions = await motionRepository.search()
+      .where('timestamp').gte(since)
+      .return.all();
+
     res.json({
       temperature: temps.map(t => ({ timestamp: t.timestamp, temp: t.temperature })),
-      acEvents: mappedAcEvents
+      acEvents: mappedAcEvents,
+      motionEvents: motions.map(m => ({ 
+        timestamp: m.timestamp, 
+        zone1: m.zone1 ? 1 : 0, 
+        zone2: m.zone2 ? 1 : 0, 
+        zone3: m.zone3 ? 1 : 0 
+      }))
     });
   } catch (err) {
     console.error('Error fetching chart data:', err);
@@ -200,6 +212,19 @@ app.get('/api/chart-data', async (req, res) => {
 app.get('/api/overrides', (req, res) => {
   res.json(deviceOverrides);
 });
+
+app.get('/api/presentation', (req, res) => {
+  res.json({ presentationMode: getPresentationMode() });
+});
+
+app.post('/api/presentation', (req, res) => {
+  const { mode } = req.body;
+  if (typeof mode !== 'boolean') return res.status(400).json({ error: 'mode must be boolean' });
+  setPresentationMode(mode);
+  reevaluateState();
+  res.json({ success: true, presentationMode: getPresentationMode() });
+});
+
 
 app.get('/api/nodes', (req, res) => {
   res.json(nodeStatus);
