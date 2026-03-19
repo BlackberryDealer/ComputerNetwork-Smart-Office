@@ -53,7 +53,8 @@ export const deviceOverrides = {
   AC: null,
   LED_1: null,
   LED_2: null,
-  LED_3: null
+  LED_3: null,
+  PRESENTATION: null
 };
 
 export const nodeStatus = {
@@ -70,7 +71,9 @@ function sendCommand(device_id, command) {
 function evaluateSmartRules(payload) {
   // 1. Presentation Mode Logic
   if (payload.type === 'mode' && payload.status === 'presentation') {
-    setPresentationMode(!presentationMode);
+    if (deviceOverrides.PRESENTATION === null) {
+      setPresentationMode(!presentationMode);
+    }
     return;
   }
 

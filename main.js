@@ -238,6 +238,11 @@ app.post('/api/overrides', (req, res) => {
     deviceOverrides[device_id] = null;
     reevaluateState();
     res.json({ success: true, mode: 'AUTO', device_id });
+  } else if (device_id === 'PRESENTATION') {
+    deviceOverrides.PRESENTATION = command;
+    setPresentationMode(command === 'ON');
+    reevaluateState();
+    res.json({ success: true, mode: 'MANUAL', device_id, command });
   } else {
     deviceOverrides[device_id] = command;
     publishSensorData('office/commands/node_b', { device_id, command });

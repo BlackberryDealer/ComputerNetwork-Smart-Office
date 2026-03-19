@@ -5,12 +5,12 @@ const ControlPanel = () => {
     AC: 'AUTO',
     LED_1: 'AUTO',
     LED_2: 'AUTO',
-    LED_3: 'AUTO'
+    LED_3: 'AUTO',
+    PRESENTATION: 'AUTO'
   });
-  const [presentationMode, setPresentationMode] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
+  const fetchOverrides = () => {
     fetch('/api/overrides')
       .then(res => res.json())
       .then(data => {
@@ -18,17 +18,17 @@ const ControlPanel = () => {
           AC: data.AC || 'AUTO',
           LED_1: data.LED_1 || 'AUTO',
           LED_2: data.LED_2 || 'AUTO',
-          LED_3: data.LED_3 || 'AUTO'
+          LED_3: data.LED_3 || 'AUTO',
+          PRESENTATION: data.PRESENTATION || 'AUTO'
         });
       })
       .catch(console.error);
+  };
 
-    fetch('/api/presentation')
-      .then(res => res.json())
-      .then(data => {
-        setPresentationMode(data.presentationMode);
-      })
-      .catch(console.error);
+  useEffect(() => {
+    fetchOverrides();
+    const interval = setInterval(fetchOverrides, 3000); // Periodic sync
+    return () => clearInterval(interval);
   }, []);
 
   const handleCommand = async (device, command) => {
@@ -44,25 +44,6 @@ const ControlPanel = () => {
       const result = await res.json();
       if (result.success) {
         setOverrides(prev => ({ ...prev, [device]: result.command || 'AUTO' }));
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handlePresentationToggle = async (mode) => {
-    try {
-      setLoading('PRESENTATION');
-      const res = await fetch('/api/presentation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode })
-      });
-      const result = await res.json();
-      if (result.success) {
-        setPresentationMode(result.presentationMode);
       }
     } catch (e) {
       console.error(e);
@@ -89,8 +70,8 @@ const ControlPanel = () => {
           let label = `Force ${cmd}`;
           if (cmd === 'AUTO') label = 'Auto';
           if (deviceId === 'AC') {
-            if (cmd === 'SLOW') label = 'Increase Temperature';
-            else if (cmd === 'FAST') label = 'Lower Temperature';
+            if (cmd === 'SLOW') label = 'Increase Temp';
+            else if (cmd === 'FAST') label = 'Lower Temp';
             else if (cmd === 'OFF') label = 'Force OFF';
           }
           
@@ -119,50 +100,7 @@ const ControlPanel = () => {
     <div style={{ marginTop: '1rem' }}>
       <h3 style={{ borderBottom: '2px solid #e5e7eb', paddingBottom: '0.5rem' }}>Interactive Override Control Panel</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
-        
-        {/* Presentation Mode Standalone Control Group */}
-        <div style={{ backgroundColor: '#fff', borderRadius: '1rem', padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', fontWeight: 600, color: '#1f2937' }}>
-            <span>Touch Sensor Presentation Mode</span>
-            <span style={{ 
-              backgroundColor: presentationMode ? '#fef08a' : '#e5e7eb',
-              color: presentationMode ? '#854d0e' : '#4b5563',
-              padding: '0.2rem 0.6rem',
-              borderRadius: '1rem',
-              fontSize: '0.75rem',
-              fontWeight: 'bold'
-            }}>{presentationMode ? 'ON' : 'OFF'}</span>
-          </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button
-              onClick={() => handlePresentationToggle(false)}
-              disabled={loading === 'PRESENTATION'}
-              style={{
-                flex: 1, padding: '0.6rem', border: '1px solid #d1d5db', borderRadius: '0.4rem',
-                cursor: 'pointer', fontWeight: 500, transition: 'all 0.2s', fontSize: '0.85rem',
-                backgroundColor: !presentationMode ? '#2563eb' : '#fff',
-                color: !presentationMode ? '#fff' : '#374151',
-                borderColor: !presentationMode ? '#2563eb' : '#d1d5db'
-              }}
-            >
-              Force OFF
-            </button>
-            <button
-              onClick={() => handlePresentationToggle(true)}
-              disabled={loading === 'PRESENTATION'}
-              style={{
-                flex: 1, padding: '0.6rem', border: '1px solid #d1d5db', borderRadius: '0.4rem',
-                cursor: 'pointer', fontWeight: 500, transition: 'all 0.2s', fontSize: '0.85rem',
-                backgroundColor: presentationMode ? '#2563eb' : '#fff',
-                color: presentationMode ? '#fff' : '#374151',
-                borderColor: presentationMode ? '#2563eb' : '#d1d5db'
-              }}
-            >
-              Force ON
-            </button>
-          </div>
-        </div>
-
+        <ControlGroup name="Touch Sensor Presentation Mode" deviceId="PRESENTATION" options={['AUTO', 'OFF', 'ON']} />
         <ControlGroup name="Air Conditioner" deviceId="AC" options={['AUTO', 'OFF', 'SLOW', 'FAST']} />
         <ControlGroup name="LED Zone 1" deviceId="LED_1" options={['AUTO', 'OFF', 'ON']} />
         <ControlGroup name="LED Zone 2" deviceId="LED_2" options={['AUTO', 'OFF', 'ON']} />
