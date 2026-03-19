@@ -101,9 +101,10 @@ const ChartOverlay = () => {
   const commonOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    animation: false, // Disables the messy "spaghetti" jumping animation when entirely replacing chart datasets
     interaction: { mode: 'index', intersect: false },
-    plugins: { legend: { display: false } },
-    elements: { point: { radius: 0, hitRadius: 10, hoverRadius: 4 } }, // Remove default dots which clutter the lines
+    plugins: { legend: { display: false } }, // Remove default dots which clutter the lines
+    elements: { point: { radius: 0, hitRadius: 10, hoverRadius: 4 } },
     scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 10 } } }
   };
 
@@ -157,13 +158,13 @@ const ChartOverlay = () => {
 
         {/* Chart 3: Motion detection (Live Topology + Historical Stacked Area) */}
         <div style={{ padding: '1.5rem', backgroundColor: '#f9fafb', borderRadius: '1rem' }}>
-          <h4 style={{ margin: '0 0 1rem 0', color: '#1f2937', fontSize: '1rem' }}>Live Room Occupancy (Topology)</h4>
+          <h4 style={{ margin: '0 0 1rem 0', color: '#1f2937', fontSize: '1rem' }}>Live Zone Occupancy (Topology)</h4>
           
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
             {[
-              { id: 1, name: 'Room 1', active: chartData.motionPoints1[chartData.motionPoints1.length - 1] === 1, color: '#10b981' },
-              { id: 2, name: 'Room 2', active: chartData.motionPoints2[chartData.motionPoints2.length - 1] === 1, color: '#f59e0b' },
-              { id: 3, name: 'Room 3', active: chartData.motionPoints3[chartData.motionPoints3.length - 1] === 1, color: '#8b5cf6' }
+              { id: 1, name: 'Zone 1', active: chartData.motionPoints1[chartData.motionPoints1.length - 1] === 1, color: '#10b981' },
+              { id: 2, name: 'Zone 2', active: chartData.motionPoints2[chartData.motionPoints2.length - 1] === 1, color: '#ef4444' },
+              { id: 3, name: 'Zone 3', active: chartData.motionPoints3[chartData.motionPoints3.length - 1] === 1, color: '#facc15' }
             ].map(room => (
               <div key={room.name} style={{
                 padding: '1.5rem 1rem',
@@ -198,7 +199,7 @@ const ChartOverlay = () => {
                 labels: chartData.labels,
                 datasets: [
                   {
-                    label: 'Room 1',
+                    label: 'Zone 1',
                     data: chartData.motionPoints1,
                     borderColor: '#10b981',
                     backgroundColor: '#10b981aa',
@@ -207,19 +208,19 @@ const ChartOverlay = () => {
                     borderWidth: 1
                   },
                   {
-                    label: 'Room 2',
+                    label: 'Zone 2',
                     data: chartData.motionPoints2,
-                    borderColor: '#f59e0b',
-                    backgroundColor: '#f59e0baa',
+                    borderColor: '#ef4444',
+                    backgroundColor: '#ef4444aa',
                     fill: true,
                     stepped: true,
                     borderWidth: 1
                   },
                   {
-                    label: 'Room 3',
+                    label: 'Zone 3',
                     data: chartData.motionPoints3,
-                    borderColor: '#8b5cf6',
-                    backgroundColor: '#8b5cf6aa',
+                    borderColor: '#facc15',
+                    backgroundColor: '#facc15aa',
                     fill: true,
                     stepped: true,
                     borderWidth: 1
