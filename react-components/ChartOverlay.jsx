@@ -17,6 +17,13 @@ const ChartOverlay = () => {
     motionPoints2: [],
     motionPoints3: []
   });
+  const [lastMotionTimes, setLastMotionTimes] = useState({ zone1: null, zone2: null, zone3: null });
+  const [nowMillis, setNowMillis] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowMillis(Date.now()), 100);
+    return () => clearInterval(timer);
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -39,6 +46,16 @@ const ChartOverlay = () => {
       const parsedTemps = data.temperature.map(t => ({...t, timeMs: new Date(t.timestamp).getTime()})).sort((a,b) => a.timeMs - b.timeMs);
       const parsedAc = data.acEvents.map(a => ({...a, timeMs: new Date(a.timestamp).getTime()})).sort((a,b) => a.timeMs - b.timeMs);
       const parsedMotion = data.motionEvents.map(m => ({...m, timeMs: new Date(m.timestamp).getTime()})).sort((a,b) => a.timeMs - b.timeMs);
+      
+      let lastMotion1 = null;
+      let lastMotion2 = null;
+      let lastMotion3 = null;
+      parsedMotion.forEach(m => {
+        if (m.zone1 === 1) lastMotion1 = m.timeMs;
+        if (m.zone2 === 1) lastMotion2 = m.timeMs;
+        if (m.zone3 === 1) lastMotion3 = m.timeMs;
+      });
+      setLastMotionTimes({ zone1: lastMotion1, zone2: lastMotion2, zone3: lastMotion3 });
       
       const allTimestamps = [...new Set([
         ...parsedTemps.map(t => t.timeMs),
@@ -175,26 +192,35 @@ const ChartOverlay = () => {
           
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
             {[
-              { id: 1, name: 'Zone 1', active: chartData.motionPoints1[chartData.motionPoints1.length - 1] === 1, color: '#10b981' },
-              { id: 2, name: 'Zone 2', active: chartData.motionPoints2[chartData.motionPoints2.length - 1] === 1, color: '#ef4444' },
-              { id: 3, name: 'Zone 3', active: chartData.motionPoints3[chartData.motionPoints3.length - 1] === 1, color: '#facc15' }
-            ].map(room => (
-              <div key={room.name} style={{
-                padding: '1.5rem 1rem',
-                borderRadius: '0.8rem',
-                backgroundColor: room.active ? room.color : '#e5e7eb',
-                color: room.active ? '#fff' : '#6b7280',
-                textAlign: 'center',
-                transition: 'all 0.3s ease',
-                boxShadow: room.active ? `0 0 20px ${room.color}66` : 'none',
-                transform: room.active ? 'scale(1.02)' : 'scale(1)'
-              }}>
-                <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{room.name}</div>
-                <div style={{ fontSize: '0.85rem', textTransform: 'uppercase', marginTop: '0.5rem', fontWeight: 600, letterSpacing: '0.05em' }}>
-                  {room.active ? 'Occupied' : 'Empty'}
+              { id: 1, name: 'Zone 1', color: '#10b981' },
+              { id: 2, name: 'Zone 2', color: '#ef4444' },
+              { id: 3, name: 'Zone 3', color: '#facc15' }
+            ].map(room => {
+              const motionTime = lastMotionTimes[`zone${room.id}`];
+              const timeRemaining = motionTime ? Math.max(0, 10 - (nowMillis - motionTime) / 1000) : 0;
+              const isActive = timeRemaining > 0;
+              
+              return (
+                <div key={room.name} style={{
+                  padding: '1.5rem 1rem',
+                  borderRadius: '0.8rem',
+                  backgroundColor: isActive ? room.color : '#e5e7eb',
+                  color: isActive ? '#fff' : '#6b7280',
+                  textAlign: 'center',
+                  transition: 'backgroundColor 0.3s ease, color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease',
+                  boxShadow: isActive ? `0 0 20px ${room.color}66` : 'none',
+                  transform: isActive ? 'scale(1.02)' : 'scale(1)'
+                }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem', opacity: isActive ? 1 : 0.3 }}>
+                    {timeRemaining > 0 ? timeRemaining.toFixed(1) + 's' : '0.0s'}
+                  </div>
+                  <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{room.name}</div>
+                  <div style={{ fontSize: '0.85rem', textTransform: 'uppercase', marginTop: '0.5rem', fontWeight: 600, letterSpacing: '0.05em' }}>
+                    {isActive ? 'Occupied' : 'Empty'}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <h4 style={{ margin: '0 0 1rem 0', color: '#4b5563', fontSize: '0.9rem' }}>Historical Motion Activity (Stacked)</h4>
