@@ -35,20 +35,33 @@ const ChartOverlay = () => {
       const motion2 = [];
       const motion3 = [];
       
-      // We will loop from the earliest to latest temperature points
+      // We will loop from the earliest to latest overall events, instead of waiting for 5-sec temperature points
       const parsedTemps = data.temperature.map(t => ({...t, timeMs: new Date(t.timestamp).getTime()})).sort((a,b) => a.timeMs - b.timeMs);
       const parsedAc = data.acEvents.map(a => ({...a, timeMs: new Date(a.timestamp).getTime()})).sort((a,b) => a.timeMs - b.timeMs);
       const parsedMotion = data.motionEvents.map(m => ({...m, timeMs: new Date(m.timestamp).getTime()})).sort((a,b) => a.timeMs - b.timeMs);
       
-      parsedTemps.forEach(t => {
-        labels.push(new Date(t.timestamp).toLocaleTimeString());
-        tempPoints.push(t.temp);
+      const allTimestamps = [...new Set([
+        ...parsedTemps.map(t => t.timeMs),
+        ...parsedAc.map(a => a.timeMs),
+        ...parsedMotion.map(m => m.timeMs)
+      ])].sort((a, b) => a - b);
+      
+      allTimestamps.forEach(timeMs => {
+        labels.push(new Date(timeMs).toLocaleTimeString());
+        
+        let closestTemp = 0;
+        if (parsedTemps.length > 0) {
+          closestTemp = parsedTemps.reduce((prev, curr) => {
+            return (Math.abs(curr.timeMs - timeMs) < Math.abs(prev.timeMs - timeMs) ? curr : prev);
+          }).temp;
+        }
+        tempPoints.push(closestTemp);
         
         // Find nearest AC event status
         let closestAcStatus = 0;
         if (parsedAc.length > 0) {
           closestAcStatus = parsedAc.reduce((prev, curr) => {
-            return (Math.abs(curr.timeMs - t.timeMs) < Math.abs(prev.timeMs - t.timeMs) ? curr : prev);
+            return (Math.abs(curr.timeMs - timeMs) < Math.abs(prev.timeMs - timeMs) ? curr : prev);
           }).status;
         }
         acPoints.push(closestAcStatus);
@@ -57,7 +70,7 @@ const ChartOverlay = () => {
         let closestMotion = { zone1: 0, zone2: 0, zone3: 0 };
         if (parsedMotion.length > 0) {
           closestMotion = parsedMotion.reduce((prev, curr) => {
-            return (Math.abs(curr.timeMs - t.timeMs) < Math.abs(prev.timeMs - t.timeMs) ? curr : prev);
+            return (Math.abs(curr.timeMs - timeMs) < Math.abs(prev.timeMs - timeMs) ? curr : prev);
           });
         }
         motion1.push(closestMotion.zone1);
