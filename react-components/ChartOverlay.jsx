@@ -47,22 +47,25 @@ const ChartOverlay = () => {
       const parsedAc = data.acEvents.map(a => ({...a, timeMs: new Date(a.timestamp).getTime()})).sort((a,b) => a.timeMs - b.timeMs);
       const parsedMotion = data.motionEvents.map(m => ({...m, timeMs: new Date(m.timestamp).getTime()})).sort((a,b) => a.timeMs - b.timeMs);
       
-      let lastMotion1 = null;
-      let lastMotion2 = null;
-      let lastMotion3 = null;
-      parsedMotion.forEach(m => {
-        if (m.zone1 === 1) lastMotion1 = m.timeMs;
-        if (m.zone2 === 1) lastMotion2 = m.timeMs;
-        if (m.zone3 === 1) lastMotion3 = m.timeMs;
-      });
-      setLastMotionTimes({ zone1: lastMotion1, zone2: lastMotion2, zone3: lastMotion3 });
-      
       const allTimestamps = [...new Set([
         ...parsedTemps.map(t => t.timeMs),
         ...parsedAc.map(a => a.timeMs),
         ...parsedMotion.map(m => m.timeMs)
       ])].sort((a, b) => a - b);
       
+      // Calculate server-vs-client time drift to perfectly align the 10s countdown
+      const latestDbTime = allTimestamps.length > 0 ? allTimestamps[allTimestamps.length - 1] : Date.now();
+      const localClockOffset = Date.now() - latestDbTime;
+
+      let lastMotion1 = null;
+      let lastMotion2 = null;
+      let lastMotion3 = null;
+      parsedMotion.forEach(m => {
+        if (m.zone1 === 1) lastMotion1 = m.timeMs + localClockOffset;
+        if (m.zone2 === 1) lastMotion2 = m.timeMs + localClockOffset;
+        if (m.zone3 === 1) lastMotion3 = m.timeMs + localClockOffset;
+      });
+      setLastMotionTimes({ zone1: lastMotion1, zone2: lastMotion2, zone3: lastMotion3 });
       allTimestamps.forEach(timeMs => {
         labels.push(new Date(timeMs).toLocaleTimeString());
         
