@@ -258,32 +258,6 @@ app.post('/api/overrides', (req, res) => {
   }
 });
 
-app.get("/get/:temperature", async (req, res) => {
-
-  const searchTemperature = req.params.temperature
-
-  const temperatureData = await temperatureRepository.search()
-    .where('temperature').equals(searchTemperature).return.all()
-
-  console.log(`Search for temperature ${searchTemperature} returned:`, temperatureData)
-
-  res.json(`Data received: ${temperatureData[0].temperature}\n`)
-})
-
-app.post('/post/:temperature', async (req, res) => {
-
-  const temperature = parseFloat(req.params.temperature)
-
-  let temperatureData = {
-    temperature,
-    timestamp: new Date().toISOString()
-  }
-
-  temperatureData = await temperatureRepository.save(temperatureData)
-
-  res.send(`Data received. Temperature Entity: ${temperatureData[EntityId]}\n`)
-})
-
 app.post('/mqtt/publish/:topic', (req, res) => {
   const topic = req.params.topic
   const payload = req.body || { value: req.query.value || 'test' }
