@@ -31,7 +31,6 @@ mqttServer.listen(mqttPort, () => {
   console.log(`MQTT broker is running on port ${mqttPort}`)
 })
 
-
 broker.on('client', (client) => {
   console.log(`Client connected: ${client.id}`)
 })
@@ -49,7 +48,6 @@ app.use(express.json())
 app.use(express.urlencoded({ extended: false }))
 
 app.use(express.static('dist'))
-app.use(express.static('public'))
 
 app.get('/', (req, res) => {
   res.sendFile('index.html', {
@@ -108,45 +106,6 @@ await subscriber.subscribe('sensor:updates', (msg) => {
     console.warn('Invalid Redis stream message', msg)
   }
 })
-
-
-app.get('/api/motion-history', async (req, res) => {
-  try {
-    const { range } = req.query;
-    let since = new Date();
-    if (range === 'hour') {
-      since.setHours(since.getHours() - 1);
-    } else if (range === 'day') {
-      since.setDate(since.getDate() - 1);
-    } else if (range === 'week') {
-      since.setDate(since.getDate() - 7);
-    } else {
-      since.setMinutes(since.getMinutes() - 1); // default 1 min
-    }
-
-    const results = await motionRepository.search()
-      .where('timestamp').gte(since)
-      .return.page(0, 100000);
-
-    let z1 = 0, z2 = 0, z3 = 0;
-
-    for (let row of results) {
-      if (row.zone1) z1++;
-      if (row.zone2) z2++;
-      if (row.zone3) z3++;
-    }
-
-    res.json({
-      total: results.length,
-      zone_1: z1,
-      zone_2: z2,
-      zone_3: z3
-    });
-  } catch (err) {
-    console.error('Error fetching motion history:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
 
 app.get('/api/analytics', async (req, res) => {
   try {
@@ -235,7 +194,6 @@ app.post('/api/presentation', (req, res) => {
   reevaluateState();
   res.json({ success: true, presentationMode: getPresentationMode() });
 });
-
 
 app.get('/api/nodes', (req, res) => {
   res.json(nodeStatus);
