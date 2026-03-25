@@ -9,8 +9,14 @@ import {
   motionRepository,
 } from './config/redisRepository.js'
 import redisClient from './config/redis.js'
-import { publishSensorData, deviceOverrides, nodeStatus, reevaluateState, getPresentationMode, setPresentationMode, activeCommands } from './mqtt.js'
-import { EntityId } from 'redis-om'
+import { publishSensorData,
+  deviceOverrides,
+  nodeStatus,
+  reevaluateState,
+  getPresentationMode,
+  setPresentationMode,
+  activeCommands
+} from './mqtt.js'
 import { Server as SocketIOServer } from 'socket.io'
 import './mqtt.js' // Ensure MQTT client is initialized and connected
 
@@ -45,7 +51,6 @@ app.use(express.urlencoded({ extended: false }))
 app.use(express.static('dist'))
 app.use(express.static('public'))
 
-import fs from 'fs'
 app.get('/', (req, res) => {
   res.sendFile('index.html', {
     root: 'dist' 
