@@ -47,11 +47,9 @@ app.use(express.static('public'))
 
 import fs from 'fs'
 app.get('/', (req, res) => {
-  if (fs.existsSync('dist/index.html')) {
-    res.sendFile('index.html', { root: 'dist' })
-  } else {
-    res.sendFile('index.html', { root: 'public' })
-  }
+  res.sendFile('index.html', {
+    root: 'dist' 
+  })
 })
 
 // Helper functions to get latest data from Redis
