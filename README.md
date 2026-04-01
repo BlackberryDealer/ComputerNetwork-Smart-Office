@@ -126,7 +126,7 @@ Node B is a **standalone Raspberry Pi** dedicated to actuator control. It connec
 | Servo Motor    | GPIO 12  | AC Vent Control (speed/position) |
 
 #### Behavior
-- Subscribes to `office/commands/node_b` and executes received commands.
+- Subscribes to `smartoffice/commands/node_b` and executes received commands.
 - **LED Control:** Turns LEDs ON/OFF based on received commands.
 - **AC Servo Control:** Sweeps the servo back and forth to simulate AC operation:
   - `OFF` — Servo stops.
@@ -341,9 +341,8 @@ cd ComputerNetwork-Smart-Office
 # 2. Install Python dependencies
 pip install -r requirements.txt
 
-# 3. Update the broker IP in python_sensor_node.py
-# Change BROKER_IP to Node C's LAN IP address
-# BROKER_IP = "192.168.x.x"
+# 3. Set the broker IP via environment variable
+export MQTT_BROKER_IP="<NODE_C_IP>"  # e.g. 192.168.1.100
 
 # 4. Run the sensor node
 python node_a/python_sensor_node.py
@@ -362,9 +361,8 @@ pip install -r requirements.txt
 # 3. Start the pigpio daemon (required for servo)
 sudo pigpiod
 
-# 4. Update the broker IP in node_b_mqtt.py
-# Change BROKER_IP to Node C's LAN IP address
-# BROKER_IP = "192.168.x.x"
+# 4. Set the broker IP via environment variable
+export MQTT_BROKER_IP="<NODE_C_IP>"  # e.g. 192.168.1.100
 
 # 5. Run the actuator node
 python node_b/node_b_mqtt.py
@@ -428,8 +426,14 @@ http://<NODE_C_IP_ADDRESS>:3000
 
 Before running the system, you **must** update the broker IP addresses in both Node A and Node B to point to Node C's LAN IP:
 
-- **`node_a/python_sensor_node.py`** — Change `BROKER_IP = "127.0.0.1"` → `BROKER_IP = "<NODE_C_IP>"`
-- **`node_b/node_b_mqtt.py`** — Change `BROKER_IP = "10.137.164.56"` → `BROKER_IP = "<NODE_C_IP>"`
+- **`node_a/python_sensor_node.py`** — Set `MQTT_BROKER_IP` environment variable or change default: `BROKER_IP = "<NODE_C_IP>"`
+- **`node_b/node_b_mqtt.py`** — Set `MQTT_BROKER_IP` environment variable or change default: `BROKER_IP = "<NODE_C_IP>"`
+
+> **Tip:** Use environment variables instead of editing code:
+> ```bash
+> export MQTT_BROKER_IP="192.168.x.x"
+> python node_a/python_sensor_node.py
+> ```
 
 ---
 
@@ -472,7 +476,7 @@ curl -X POST http://<NODE_C_IP>:3000/api/overrides \
 | `smartoffice/sensors`        | Node A      | Node C      | Climate, motion, and mode events        |
 | `smartoffice/status/node_a`  | Node A      | Node C      | Online/offline status (retained + LWT)  |
 | `smartoffice/status/node_b`  | Node B      | Node C      | Online/offline status + heartbeat       |
-| `office/commands/node_b`     | Node C      | Node B      | Device commands (LEDs, AC)              |
+| `smartoffice/commands/node_b` | Node C      | Node B      | Device commands (LEDs, AC)              |
 
 ---
 

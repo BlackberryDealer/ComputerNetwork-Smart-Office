@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { io } from 'socket.io-client';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
-const socket = io();
+const socket = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 });
 
 const ChartOverlay = () => {
-  const [timeRange, setTimeRange] = useState(10); // in minutes
+  const [timeRange, setTimeRange] = useState(10);
   const [chartData, setChartData] = useState({
     labels: [],
     tempPoints: [],
@@ -19,19 +19,26 @@ const ChartOverlay = () => {
   });
   const [lastMotionTimes, setLastMotionTimes] = useState({ zone1: null, zone2: null, zone3: null });
   const [nowMillis, setNowMillis] = useState(Date.now());
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
 
+  // Reduced from 100ms to 1000ms to cut re-renders by 10x
   useEffect(() => {
-    const timer = setInterval(() => setNowMillis(Date.now()), 100);
+    const timer = setInterval(() => setNowMillis(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
+      setError(null);
+      setLoading(true);
       const res = await fetch(`/api/chart-data?minutes=${timeRange}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       
       if (!data || !data.temperature || !data.acEvents || !data.motionEvents) {
         console.error("Invalid data format received:", data);
+        setError("Invalid data format");
         return;
       }
       
@@ -108,8 +115,11 @@ const ChartOverlay = () => {
       });
     } catch (e) {
       console.error(e);
+      setError('Failed to load chart data');
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [timeRange]);
 
   useEffect(() => {
     fetchData();
@@ -117,7 +127,7 @@ const ChartOverlay = () => {
     
     const handleUpdate = (data) => {
       // Refresh chart on relevant updates
-      if (data.topic === 'smartoffice/sensors' || data.topic === 'office/commands/node_b' || data.topic === 'smartoffice/status/node_b' || data.topic.startsWith('redis/')) {
+      if (data.topic === 'smartoffice/sensors' || data.topic === 'smartoffice/commands/node_b' || data.topic === 'smartoffice/status/node_b' || data.topic.startsWith('redis/')) {
         clearTimeout(timeoutId);
         timeoutId = setTimeout(() => fetchData(), 300);
       }
@@ -141,7 +151,7 @@ const ChartOverlay = () => {
     scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 10 } } }
   };
 
-  const getChartData = (label, data, color, yOptions = {}) => ({
+  const getChartData = useCallback((label, data, color, yOptions = {}) => ({
     labels: chartData.labels,
     datasets: [{
       label,
@@ -152,7 +162,7 @@ const ChartOverlay = () => {
       stepped: yOptions.stepped || false,
       tension: yOptions.stepped ? 0 : 0.4
     }]
-  });
+  }), [chartData.labels]);
 
   return (
     <div style={{ padding: '1.5rem', backgroundColor: '#fff', borderRadius: '1rem', marginTop: '1rem', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
@@ -170,6 +180,11 @@ const ChartOverlay = () => {
         </select>
       </div>
 
+      {error && (
+        <div style={{ padding: '0.75rem', backgroundColor: '#fef2f2', color: '#991b1b', borderRadius: '0.5rem', textAlign: 'center', fontSize: '0.9rem', marginBottom: '1rem' }}>
+          ⚠️ {error}
+        </div>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
         {/* Chart 1: Temperature */}
         <div style={{ height: '200px' }}>

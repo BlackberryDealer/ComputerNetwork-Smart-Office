@@ -1,110 +1,217 @@
+"""
+Node A — Smart Office Sensor Node (Raspberry Pi)
+
+Reads physical environmental data from DHT11, 3× PIR motion sensors,
+and a touch button, then publishes to the MQTT broker on Node C.
+
+Sensors:
+  - DHT11 (GPIO 4): Temperature & Humidity, every 5 seconds
+  - PIR Zone 1 (GPIO 18): Motion detection, every 2 seconds
+  - PIR Zone 2 (GPIO 24): Motion detection, every 2 seconds
+  - PIR Zone 3 (GPIO 22): Motion detection, every 2 seconds
+  - Touch Button (GPIO 17): Presentation mode trigger, instant
+"""
+
 import time
-from datetime import datetime
+import logging
+import os
 import json
+import signal
+import sys
+from datetime import datetime
+
 import paho.mqtt.client as mqtt
 from gpiozero import MotionSensor, Button
 import RPi.GPIO as GPIO
 from dht11 import DHT11
 
-# --- MQTT SETUP ---
-BROKER_IP = "127.0.0.1"
-BROKER_PORT = 1883
+# --- LOGGING SETUP ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger("NodeA")
+
+# --- CONFIGURATION ---
+BROKER_IP = os.getenv("MQTT_BROKER_IP", "127.0.0.1")
+BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "1883"))
 TOPIC = "smartoffice/sensors"
 STATUS_TOPIC = "smartoffice/status/node_a"
+DHT_READ_INTERVAL = 5.0   # seconds between DHT11 reads
+MOTION_READ_INTERVAL = 2.0  # seconds between motion reads
+MQTT_KEEPALIVE = 60
 
-# Last Will and Testament
-lwt_payload = json.dumps({"node": "Node A", "status": "offline"})
-online_payload = json.dumps({"node": "Node A", "status": "online"})
+# --- SHUTDOWN FLAG ---
+_running = True
+
+
+def _signal_handler(sig, frame):
+    """Handle SIGINT/SIGTERM for graceful shutdown."""
+    global _running
+    logger.info("Received signal %s — shutting down gracefully...", sig)
+    _running = False
+
+
+signal.signal(signal.SIGINT, _signal_handler)
+signal.signal(signal.SIGTERM, _signal_handler)
+
+# --- MQTT CALLBACKS ---
+
+def on_connect(client, userdata, flags, reason_code, properties):
+    """Called when the client connects to the broker."""
+    if reason_code == 0:
+        logger.info("Connected to MQTT broker at %s:%s", BROKER_IP, BROKER_PORT)
+        client.publish(STATUS_TOPIC, online_payload, qos=1, retain=True)
+    else:
+        logger.error("Connection failed with reason code: %s", reason_code)
+
+
+def on_disconnect(client, userdata, flags, reason_code, properties):
+    """Called when the client disconnects — logs the event."""
+    if reason_code != 0:
+        logger.warning("Unexpected disconnect (rc=%s). Auto-reconnect will retry.", reason_code)
+    else:
+        logger.info("Disconnected from broker cleanly.")
+
+
+# --- MQTT CLIENT SETUP ---
+lwt_payload = json.dumps({"node": "node_a", "status": "offline"})
+online_payload = json.dumps({"node": "node_a", "status": "online"})
 
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqtt_client.will_set(STATUS_TOPIC, payload=lwt_payload, qos=1, retain=True)
 
-try:
-    mqtt_client.connect(BROKER_IP, BROKER_PORT, 60)
-    mqtt_client.loop_start()
-    print(f"Connected to MQTT Broker at {BROKER_IP}")
-    # Publish online status
-    mqtt_client.publish(STATUS_TOPIC, online_payload, retain=True)
-except Exception as e:
-    print(f"Failed to connect to MQTT broker: {e}")
+# Enable automatic reconnection with exponential backoff
+mqtt_client.reconnect_delay_set(min_delay=1, max_delay=30)
 
-def publish_data(data_dict):
+mqtt_client.on_connect = on_connect
+mqtt_client.on_disconnect = on_disconnect
+
+
+def publish_data(data_dict: dict) -> bool:
+    """Publish a JSON payload to the sensor topic. Returns True on success."""
     try:
         json_payload = json.dumps(data_dict)
-        mqtt_client.publish(TOPIC, json_payload)
+        result = mqtt_client.publish(TOPIC, json_payload, qos=0)
+        if result.rc != mqtt.MQTT_ERR_SUCCESS:
+            logger.error("Publish failed with rc=%s", result.rc)
+            return False
+        return True
     except Exception as e:
-        print(f"Failed to publish: {e}")
+        logger.error("Failed to publish: %s", e)
+        return False
+
 
 # --- HARDWARE SETUP ---
-print("Starting Smart Office Sensor Node (Python Node A)...")
+logger.info("Starting Smart Office Sensor Node (Node A)...")
 
-# 1. Setup gpiozero sensors first
-pir_zone1 = MotionSensor(18)
-pir_zone2 = MotionSensor(24)
-pir_zone3 = MotionSensor(22)
-touch_sensor = Button(17)
+try:
+    pir_zone1 = MotionSensor(18)
+    pir_zone2 = MotionSensor(24)
+    pir_zone3 = MotionSensor(22)
+    touch_sensor = Button(17)
+except Exception as e:
+    logger.error("Failed to initialize gpiozero sensors: %s", e)
+    logger.info("Check wiring and that this is running on a Raspberry Pi.")
+    sys.exit(1)
 
-# 2. Setup DHT11 using the RPi.GPIO standard (DO NOT USE cleanup() HERE)
-GPIO.setwarnings(False)
-GPIO.setmode(GPIO.BCM)
-dht_sensor = DHT11(pin=4)  # Ensure this matches your physical wiring
+try:
+    GPIO.setwarnings(False)
+    GPIO.setmode(GPIO.BCM)
+    dht_sensor = DHT11(pin=4)
+except Exception as e:
+    logger.error("Failed to initialize DHT11 sensor: %s", e)
+    sys.exit(1)
+
 
 # --- INSTANT EVENT HANDLERS ---
-# The presentation button still acts instantly
 def touch_handler():
+    """Handle presentation mode button press — fires instantly."""
     timestamp = datetime.now().isoformat()
-    print("Presentation mode activated!")
+    logger.info("Presentation mode activated!")
     publish_data({"type": "mode", "status": "presentation", "timestamp": timestamp})
 
 touch_sensor.when_pressed = touch_handler
+
+
+# --- CONNECT TO BROKER ---
+try:
+    mqtt_client.connect(BROKER_IP, BROKER_PORT, MQTT_KEEPALIVE)
+    mqtt_client.loop_start()
+except Exception as e:
+    logger.error("Failed to connect to MQTT broker at %s:%s — %s", BROKER_IP, BROKER_PORT, e)
+    logger.info("Check that the broker is running and BROKER_IP is correct.")
+    GPIO.cleanup()
+    sys.exit(1)
+
 # --- MAIN PERIODIC LOOP ---
-last_dht_read = 0  # Tracker for the 5-second DHT delay
+last_dht_read = 0.0
 
 try:
-    while True:
-        current_time = datetime.now().isoformat()
+    while _running:
+        try:
+            current_time = datetime.now().isoformat()
 
-        # 1. MOTION SENSORS (Reads fast, every 2 seconds)
-        motion_status = {
-            "zone_1": bool(pir_zone1.value),
-            "zone_2": bool(pir_zone2.value),
-            "zone_3": bool(pir_zone3.value)
-        }
+            # 1. MOTION SENSORS (fast read, every 2 seconds)
+            motion_status = {
+                "zone_1": bool(pir_zone1.value),
+                "zone_2": bool(pir_zone2.value),
+                "zone_3": bool(pir_zone3.value)
+            }
 
-        publish_data({
-            "type": "periodic_motion",
-            "states": motion_status,
-            "timestamp": current_time
-        })
+            publish_data({
+                "type": "periodic_motion",
+                "states": motion_status,
+                "timestamp": current_time
+            })
 
-        # 2. DHT11 SENSOR (Reads slowly, only every 5 seconds)
-        if time.time() - last_dht_read >= 5.0:
-            result = dht_sensor.read()
-            last_dht_read = time.time() # Reset the timer
+            # 2. DHT11 SENSOR (slow read, only every 5 seconds)
+            if time.time() - last_dht_read >= DHT_READ_INTERVAL:
+                result = dht_sensor.read()
+                last_dht_read = time.time()
 
-            if result.is_valid():
-                temp = result.temperature
-                humidity = result.humidity
-                print(f"Temp: {temp:.1f}°C, Humidity: {humidity:.1f}% | Motion: Z1={motion_status['zone_1']} Z2={motion_status['zone_2']} Z3={motion_status['zone_3']}")
+                if result.is_valid():
+                    temp = result.temperature
+                    humidity = result.humidity
+                    logger.info(
+                        "Temp: %.1f°C, Humidity: %.1f%% | Motion: Z1=%s Z2=%s Z3=%s",
+                        temp, humidity,
+                        motion_status['zone_1'], motion_status['zone_2'], motion_status['zone_3']
+                    )
 
-                publish_data({
-                    "type": "climate",
-                    "temp": temp,
-                    "humidity": humidity,
-                    "timestamp": current_time
-                })
-            else:
-                # Silently fail so it doesn't spam the console, it will just try again in 5 seconds
-                print(f"DHT11 read failed. Retrying in 5s... | Motion: Z1={motion_status['zone_1']} Z2={motion_status['zone_2']} Z3={motion_status['zone_3']}")
+                    publish_data({
+                        "type": "climate",
+                        "temp": temp,
+                        "humidity": humidity,
+                        "timestamp": current_time
+                    })
+                else:
+                    logger.debug(
+                        "DHT11 read failed. Retrying in %ss...",
+                        DHT_READ_INTERVAL
+                    )
 
-        # Keep the fast loop running every 2 seconds for the motion sensors
-        time.sleep(2)
+            # Sleep in small increments so signal handling is responsive
+            for _ in range(int(MOTION_READ_INTERVAL * 10)):
+                if not _running:
+                    break
+                time.sleep(0.1)
 
-except KeyboardInterrupt:
-    print("\nExiting gracefully.")
+        except Exception as e:
+            logger.error("Error in sensor loop: %s", e, exc_info=True)
+            time.sleep(1)  # Avoid tight error loop
+
+except Exception as e:
+    logger.error("Fatal error: %s", e, exc_info=True)
+
 finally:
-    # Explicitly publish offline status if shut down gracefully
-    mqtt_client.publish(STATUS_TOPIC, lwt_payload, retain=True)
+    logger.info("Cleaning up...")
+    try:
+        mqtt_client.publish(STATUS_TOPIC, lwt_payload, qos=1, retain=True)
+    except Exception:
+        pass
     mqtt_client.loop_stop()
     mqtt_client.disconnect()
     GPIO.cleanup()
+    logger.info("Node A shut down complete.")

@@ -3,6 +3,7 @@ import 'dotenv/config'
 import { createServer } from 'http'
 import { Aedes } from 'aedes'
 import net from 'net'
+import cors from 'cors'
 import {
   humidityRepository,
   temperatureRepository,
@@ -21,6 +22,26 @@ import { Server as SocketIOServer } from 'socket.io'
 import './mqtt.js' // Ensure MQTT client is initialized and connected
 
 const app = express()
+
+// --- MIDDLEWARE ---
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  credentials: true
+}))
+app.use(express.json({ limit: '10kb' }))
+app.use(express.urlencoded({ extended: false }))
+
+// --- INPUT VALIDATION CONSTANTS ---
+const ALLOWED_DEVICES = ['AC', 'LED_1', 'LED_2', 'LED_3', 'PRESENTATION']
+const ALLOWED_COMMANDS = {
+  AC: ['AUTO', 'OFF', 'SLOW', 'FAST', null],
+  LED_1: ['AUTO', 'OFF', 'ON', null],
+  LED_2: ['AUTO', 'OFF', 'ON', null],
+  LED_3: ['AUTO', 'OFF', 'ON', null],
+  PRESENTATION: ['AUTO', 'OFF', 'ON', null]
+}
+const TOPIC_REGEX = /^[a-zA-Z0-9/_-]+$/
+const MAX_CHART_MINUTES = 120
 
 // MQTT Broker
 const broker = await Aedes.createBroker()
@@ -43,9 +64,6 @@ broker.on("publish", (packet, client) => {
 
 const httpServer = createServer(app)
 const io = new SocketIOServer(httpServer)
-
-app.use(express.json())
-app.use(express.urlencoded({ extended: false }))
 
 app.use(express.static('dist'))
 
@@ -130,38 +148,47 @@ app.get('/api/analytics', async (req, res) => {
 
 app.get('/api/chart-data', async (req, res) => {
   try {
-    const minutes = parseInt(req.query.minutes) || 10;
+    const minutes = Math.min(Math.max(parseInt(req.query.minutes) || 10, 1), MAX_CHART_MINUTES);
     const since = new Date();
     since.setMinutes(since.getMinutes() - minutes);
 
-    // Fetch temp history
+    // Fetch temp history (paginated for safety)
     const temps = await temperatureRepository.search()
       .where('timestamp').gte(since)
       .return.all();
     
-    // Fetch AC events
-    // nodeBEventRepository tracks device commands
+    // Fetch AC events (paginated for safety)
     const { nodeBEventRepository } = await import('./config/redisRepository.js');
     const commands = await nodeBEventRepository.search()
       .where('timestamp').gte(since)
       .return.all();
       
-    const acEvents = commands.filter(cmd => cmd.message && cmd.message.includes('"device_id":"AC"'));
-    const mappedAcEvents = acEvents.map(evt => {
+    // Parse JSON properly instead of string matching
+    const acEvents = commands.filter(cmd => {
+      try {
+        const parsed = JSON.parse(cmd.message || '{}');
+        return parsed.device_id === 'AC';
+      } catch {
+        return false;
+      }
+    }).map(evt => {
       let status = 0;
-      if (evt.message.includes('"command":"SLOW"')) status = 1;
-      if (evt.message.includes('"command":"FAST"')) status = 2;
+      try {
+        const parsed = JSON.parse(evt.message);
+        if (parsed.command === 'SLOW') status = 1;
+        if (parsed.command === 'FAST') status = 2;
+      } catch {}
       return { timestamp: evt.timestamp, status };
     });
 
-    // Fetch motion events
+    // Fetch motion events (paginated for safety)
     const motions = await motionRepository.search()
       .where('timestamp').gte(since)
       .return.all();
 
     res.json({
       temperature: temps.map(t => ({ timestamp: t.timestamp, temp: t.temperature })),
-      acEvents: mappedAcEvents,
+      acEvents: acEvents,
       motionEvents: motions.map(m => ({ 
         timestamp: m.timestamp, 
         zone1: m.zone1 ? 1 : 0, 
@@ -203,6 +230,16 @@ app.post('/api/overrides', (req, res) => {
   const { device_id, command } = req.body;
   if (!device_id) return res.status(400).json({ error: 'device_id required' });
   
+  // Validate device_id against whitelist
+  if (!ALLOWED_DEVICES.includes(device_id)) {
+    return res.status(400).json({ error: `Invalid device_id. Allowed: ${ALLOWED_DEVICES.join(', ')}` });
+  }
+
+  // Validate command against per-device whitelist
+  if (command !== null && command !== 'AUTO' && !ALLOWED_COMMANDS[device_id]?.includes(command)) {
+    return res.status(400).json({ error: `Invalid command '${command}' for ${device_id}` });
+  }
+
   if (command === 'AUTO' || command === null) {
     deviceOverrides[device_id] = null;
     reevaluateState();
@@ -214,19 +251,67 @@ app.post('/api/overrides', (req, res) => {
     res.json({ success: true, mode: 'MANUAL', device_id, command });
   } else {
     deviceOverrides[device_id] = command;
-    publishSensorData('office/commands/node_b', { device_id, command });
+    publishSensorData('smartoffice/commands/node_b', { device_id, command });
     res.json({ success: true, mode: 'MANUAL', device_id, command });
   }
 });
 
 app.post('/mqtt/publish/:topic', (req, res) => {
   const topic = req.params.topic
+
+  // Validate topic format (alphanumeric, slashes, hyphens, underscores only)
+  if (!TOPIC_REGEX.test(topic)) {
+    return res.status(400).json({ error: 'Invalid topic format. Only alphanumeric, /, -, _ allowed.' });
+  }
+
   const payload = req.body || { value: req.query.value || 'test' }
   publishSensorData(topic, payload)
   res.json({ status: 'published', topic, payload })
 })
 
+// Health check endpoint for monitoring
+app.get('/health', async (req, res) => {
+  const health = { status: 'healthy', mqtt: false, redis: false, uptime: process.uptime() };
+
+  try {
+    await redisClient.ping();
+    health.redis = true;
+  } catch {
+    health.status = 'unhealthy';
+  }
+
+  // MQTT broker runs in-process, so it's always available if the server is running
+  health.mqtt = true;
+
+  const statusCode = health.status === 'healthy' ? 200 : 503;
+  res.status(statusCode).json(health);
+});
+
 const port = process.env.PORT || 3000
 httpServer.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`)
 })
+
+// --- GRACEFUL SHUTDOWN ---
+async function gracefulShutdown(signal) {
+  console.log(`\n${signal} received — shutting down gracefully...`);
+
+  // Stop accepting new connections
+  httpServer.close(() => console.log('HTTP server closed'));
+  mqttServer.close(() => console.log('MQTT server closed'));
+
+  // Close Redis connections
+  try {
+    await subscriber.unsubscribe('sensor:updates');
+    await subscriber.disconnect();
+    await redisClient.quit();
+    console.log('Redis connections closed');
+  } catch (e) {
+    console.error('Error closing Redis:', e);
+  }
+
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

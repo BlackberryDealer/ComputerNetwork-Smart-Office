@@ -2,44 +2,59 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { Wifi, Server, Activity, Cpu } from 'lucide-react';
 
-const socket = io();
+const socket = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 });
+
+// Extracted outside component to avoid re-creation on every render
+const NodeIcon = ({ icon: Icon, label, status }) => (
+  <div role="status" aria-label={`${label}: ${status}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 20px' }}>
+    <div style={{
+      backgroundColor: '#fff',
+      padding: '1.5rem',
+      borderRadius: '50%',
+      boxShadow: `0 0 15px ${status === 'online' ? '#22c55e' : '#ef4444'}`,
+      transition: 'box-shadow 0.3s, border-color 0.3s'
+    }}>
+      <Icon color={status === 'online' ? '#22c55e' : '#ef4444'} size={40} />
+    </div>
+    <span style={{ marginTop: '0.5rem', fontWeight: 'bold' }}>{label}</span>
+    <span style={{ color: status === 'online' ? '#22c55e' : '#ef4444', fontSize: '0.8rem', textTransform: 'uppercase' }}>{status}</span>
+  </div>
+);
 
 const NetworkMap = () => {
   const [nodes, setNodes] = useState({
-    server: 'online', // Always online if the dashboard is rendering
+    server: 'online',
     node_a: 'offline', 
     node_b: 'offline', 
     node_c: 'online'  
   });
+  const [socketStatus, setSocketStatus] = useState('connected');
 
-  // Use refs to store the timeout IDs so we can clear/reset them
   const timeouts = useRef({
     node_a: null,
     node_b: null
   });
 
-  // Helper function to handle the 10-second heartbeat
   const markNodeActive = (nodeId) => {
     setNodes((prev) => ({ ...prev, [nodeId]: 'online' }));
 
-    // Clear the existing countdown
     if (timeouts.current[nodeId]) {
       clearTimeout(timeouts.current[nodeId]);
     }
 
-    // Start a fresh 15-second countdown to mark it offline
     timeouts.current[nodeId] = setTimeout(() => {
       setNodes((prev) => ({ ...prev, [nodeId]: 'offline' }));
     }, 15000);
   };
 
   useEffect(() => {
-    // Initial fetch to get currently connected devices
     fetch('/api/nodes')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then(data => {
         setNodes(prev => ({ ...prev, ...data }));
-        // Start timers for any nodes fetched as 'online' 
         Object.keys(data).forEach(nodeId => {
           if (data[nodeId] === 'online' && nodeId !== 'server') {
             markNodeActive(nodeId);
@@ -51,17 +66,14 @@ const NetworkMap = () => {
     socket.on('sensor-update', (data) => {
       if (!data.topic) return;
 
-      // 1. Check for Node A activity (Sensor packets)
       if (data.topic.startsWith('smartoffice/sensors')) {
         markNodeActive('node_a');
       }
 
-      // 2. Check for Node B activity (Heartbeat packets)
       if (data.topic.startsWith('smartoffice/status/node_b')) {
         markNodeActive('node_b');
       }
 
-      // 3. Keep the original LWT (Last Will & Testament) logic just in case
       if (data.topic.startsWith('smartoffice/status/')) {
         const nodeId = data.topic.split('/').pop();
         if (data.payload && data.payload.status === 'offline') {
@@ -73,35 +85,35 @@ const NetworkMap = () => {
       }
     });
 
+    // Socket connection status monitoring
+    socket.on('connect', () => setSocketStatus('connected'));
+    socket.on('disconnect', () => setSocketStatus('disconnected'));
+    socket.on('connect_error', () => setSocketStatus('error'));
+
     return () => {
       socket.off('sensor-update');
-      // Cleanup all timeouts when the component unmounts
+      socket.off('connect');
+      socket.off('disconnect');
+      socket.off('connect_error');
       Object.values(timeouts.current).forEach(clearTimeout);
     };
   }, []);
 
-  const getNodeColor = (status) => status === 'online' ? '#22c55e' : '#ef4444';
-
-  const NodeIcon = ({ icon: Icon, label, status }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 20px' }}>
-      <div style={{
-        backgroundColor: '#fff',
-        padding: '1.5rem',
-        borderRadius: '50%',
-        boxShadow: `0 0 15px ${getNodeColor(status)}`,
-        transition: 'box-shadow 0.3s, border-color 0.3s'
-      }}>
-        <Icon color={getNodeColor(status)} size={40} />
-      </div>
-      <span style={{ marginTop: '0.5rem', fontWeight: 'bold' }}>{label}</span>
-      <span style={{ color: getNodeColor(status), fontSize: '0.8rem', textTransform: 'uppercase' }}>{status}</span>
-    </div>
-  );
-
   return (
     <div style={{ padding: '2rem', backgroundColor: '#1f2937', borderRadius: '1rem', color: '#fff' }}>
-      <h3 style={{ textAlign: 'center', marginBottom: '2rem' }}>Live Network Topology</h3>
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '3rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <h3 style={{ textAlign: 'center', margin: 0 }}>Live Network Topology</h3>
+        <span style={{ 
+          fontSize: '0.75rem', 
+          padding: '0.25rem 0.75rem', 
+          borderRadius: '1rem',
+          backgroundColor: socketStatus === 'connected' ? '#166534' : '#991b1b',
+          color: '#fff'
+        }}>
+          {socketStatus === 'connected' ? '🟢 Live' : socketStatus === 'disconnected' ? '🔴 Reconnecting...' : '🔴 Error'}
+        </span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '3rem', flexWrap: 'wrap' }}>
         <NodeIcon icon={Activity} label="Node A (Sensors)" status={nodes.node_a} />
         
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>

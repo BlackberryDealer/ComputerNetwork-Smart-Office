@@ -23,10 +23,19 @@ const pubClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: `node-p
 const subClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: `node-sub-${Math.random().toString(16).slice(2)}` })
 
 // --- SMART OFFICE DECISION ENGINE ---
-const COMMAND_TOPIC = 'office/commands/node_b';
-const activeZones = { 1: null, 2: null, 3: null };
-const zoneOffTimestamps = { 1: null, 2: null, 3: null };
+const COMMAND_TOPIC = 'smartoffice/commands/node_b';
+
+// Constants
 const MOTION_TIMEOUT = 10000; // 10 seconds timeout for LEDs
+const AC_TEMP_THRESHOLD = 25.5;
+const LED_POWER_WATTS = 50;
+const AC_POWER_WATTS = 750;
+const MIN_SAVING_INTERVAL_MS = 60000; // Only track savings for periods > 1 minute
+
+// Zone occupancy state (booleans) — separate from timer handles
+const zoneOccupied = { 1: false, 2: false, 3: false };
+const zoneLightTimeouts = { 1: null, 2: null, 3: null };
+const zoneOffTimestamps = { 1: null, 2: null, 3: null };
 let currentTemp = 24.0;
 let presentationMode = false;
 let acOffTimestamp = null;
@@ -83,6 +92,20 @@ function sendCommand(device_id, command) {
   trackAndPublish(device_id, command);
 }
 
+/**
+ * Calculate energy savings from a time-off period.
+ * Only counts if the off period exceeds MIN_SAVING_INTERVAL_MS.
+ */
+function trackEnergySaving(offTimestamp, redisKey, powerWatts) {
+  if (!offTimestamp) return null;
+  const timeOffMs = Date.now() - offTimestamp;
+  if (timeOffMs < MIN_SAVING_INTERVAL_MS) return null;
+  const hours = timeOffMs / (1000 * 60 * 60);
+  const energySaved = (hours * powerWatts) / 1000;
+  redisClient.incrByFloat(redisKey, hours).catch(e => console.error(e));
+  return energySaved;
+}
+
 function evaluateSmartRules(payload) {
   // 1. Presentation Mode Logic
   if (payload.type === 'mode' && payload.status === 'presentation') {
@@ -94,7 +117,7 @@ function evaluateSmartRules(payload) {
 
   if (presentationMode) return; // Ignore auto-sensors while presenting
 
-  // 2. Motion Logic (5-second timeout)
+  // 2. Motion Logic (10-second timeout)
   if (payload.type === 'periodic_motion' && payload.states) {
     let roomJustOccupied = false;
 
@@ -103,32 +126,26 @@ function evaluateSmartRules(payload) {
       if (isMotion) {
         roomJustOccupied = true;
 
-        if (zoneOffTimestamps[i]) {
-          const timeOffMs = Date.now() - zoneOffTimestamps[i];
-          const hours = timeOffMs / (1000 * 60 * 60);
-          if (hours > 0) {
-            redisClient.incrByFloat('analytics:time_saved_hours', hours).catch(e => console.error(e));
-          }
-          zoneOffTimestamps[i] = null;
-        }
+        // Track LED energy savings when zone comes back online
+        trackEnergySaving(zoneOffTimestamps[i], 'analytics:time_saved_hours', LED_POWER_WATTS);
+        zoneOffTimestamps[i] = null;
 
+        // Track AC energy savings when room becomes occupied
         if (acOffTimestamp) {
-          const acTimeOffMs = Date.now() - acOffTimestamp;
-          const acHours = acTimeOffMs / (1000 * 60 * 60);
-          if (acHours > 0) {
-            redisClient.incrByFloat('analytics:ac_time_saved_hours', acHours).catch(e => console.error(e));
-          }
+          trackEnergySaving(acOffTimestamp, 'analytics:ac_time_saved_hours', AC_POWER_WATTS);
           acOffTimestamp = null;
         }
 
         sendCommand(`LED_${i}`, 'ON');
+        zoneOccupied[i] = true;
         
-        // Clear existing timer and start a new 5-second countdown
-        if (activeZones[i]) clearTimeout(activeZones[i]);
-        activeZones[i] = setTimeout(() => {
-          console.log(`[Smart Logic] Zone ${i} empty for 5s. Turning OFF.`);
+        // Clear existing timer and start a new 10-second countdown
+        if (zoneLightTimeouts[i]) clearTimeout(zoneLightTimeouts[i]);
+        zoneLightTimeouts[i] = setTimeout(() => {
+          console.log(`[Smart Logic] Zone ${i} empty for ${MOTION_TIMEOUT / 1000}s. Turning OFF.`);
           sendCommand(`LED_${i}`, 'OFF');
-          activeZones[i] = null; 
+          zoneLightTimeouts[i] = null;
+          zoneOccupied[i] = false;
 
           // Ghost occupancy tracked
           redisClient.incr('analytics:ghost_events').catch(e => console.error(e));
@@ -149,7 +166,7 @@ function evaluateSmartRules(payload) {
 }
 
 function checkOverallOccupancy() {
-  const isOccupied = Object.values(activeZones).some(timer => timer !== null);
+  const isOccupied = Object.values(zoneOccupied).some(Boolean);
   if (!isOccupied && !presentationMode) {
     if (!acOffTimestamp && activeCommands['AC'] !== 'OFF') {
       acOffTimestamp = Date.now();
@@ -162,11 +179,10 @@ function checkOverallOccupancy() {
 function updateAC() {
   if (presentationMode) return;
   
-  const isOccupied = Object.values(activeZones).some(timer => timer !== null);
+  const isOccupied = Object.values(zoneOccupied).some(Boolean);
   if (!isOccupied) return; // Do nothing if room is empty, checkOverallOccupancy handles the OFF command
 
-  // AC stays SLOW below 25, goes FAST at 25 and above
-  let acCommand = currentTemp > 25.5 ? 'FAST' : 'SLOW';
+  let acCommand = currentTemp > AC_TEMP_THRESHOLD ? 'FAST' : 'SLOW';
   sendCommand('AC', acCommand);
 }
 export function reevaluateState() {
@@ -179,14 +195,14 @@ export function reevaluateState() {
   }
   
   for (let i = 1; i <= 3; i++) {
-    const state = (deviceOverrides[`LED_${i}`] !== null && deviceOverrides[`LED_${i}`] !== 'AUTO') ? deviceOverrides[`LED_${i}`] : (activeZones[i] ? 'ON' : 'OFF');
+    const state = (deviceOverrides[`LED_${i}`] !== null && deviceOverrides[`LED_${i}`] !== 'AUTO') ? deviceOverrides[`LED_${i}`] : (zoneOccupied[i] ? 'ON' : 'OFF');
     trackAndPublish(`LED_${i}`, state);
   }
   
-  const isOccupied = Object.values(activeZones).some(timer => timer !== null);
+  const isOccupied = Object.values(zoneOccupied).some(Boolean);
   let acCmd = 'OFF';
   if (isOccupied) {
-    acCmd = currentTemp > 25.5 ? 'FAST' : 'SLOW';
+    acCmd = currentTemp > AC_TEMP_THRESHOLD ? 'FAST' : 'SLOW';
   }
   trackAndPublish('AC', (deviceOverrides['AC'] !== null && deviceOverrides['AC'] !== 'AUTO') ? deviceOverrides['AC'] : acCmd);
 }
@@ -195,8 +211,8 @@ export function reevaluateState() {
 
 subClient.on('connect', () => {
   console.log('[MQTT SUB] connected to broker', brokerUrl)
-  const topics = ['smartoffice/sensors', 'smartoffice/#', 'redis/#', 'node_b/#', 'office/#']
-  subClient.subscribe(topics, { qos: 0 }, (err, granted) => {
+  const topics = ['smartoffice/sensors', 'smartoffice/#', 'redis/#', 'node_b/#']
+  subClient.subscribe(topics, { qos: 1 }, (err, granted) => {
     if (err) {
       console.error('[MQTT SUB] subscribe error', err)
       return
@@ -228,7 +244,7 @@ async function saveToRedis(topic, payload) {
     saved = true
   }
 
-  if (topic.startsWith('smartoffice/') || topic.startsWith('node_b/') || topic.startsWith('office/')) {
+  if (topic.startsWith('smartoffice/') || topic.startsWith('node_b/')) {
     const zone = payload.zone !== undefined ? Number(payload.zone) : undefined
     const temp = payload.temp !== undefined ? Number(payload.temp) : undefined
     const status = payload.status ? String(payload.status) : undefined
@@ -283,7 +299,7 @@ pubClient.on('error', (err) => {
 
 export function publishSensorData(topic, payload) {
   const message = typeof payload === 'string' ? payload : JSON.stringify(payload)
-  pubClient.publish(topic, message, { qos: 0, retain: false }, (err) => {
+  pubClient.publish(topic, message, { qos: 1, retain: false }, (err) => {
     if (err) {
       console.error('[MQTT PUB] publish error', err)
     } else {
