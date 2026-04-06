@@ -18,6 +18,7 @@ import os
 import json
 import signal
 import sys
+import threading
 from datetime import datetime
 
 import paho.mqtt.client as mqtt
@@ -41,6 +42,9 @@ STATUS_TOPIC = "smartoffice/status/node_a"
 DHT_READ_INTERVAL = 5.0   # seconds between DHT11 reads
 MOTION_READ_INTERVAL = 2.0  # seconds between motion reads
 MQTT_KEEPALIVE = 60
+
+# --- THREAD SAFETY ---
+publish_lock = threading.Lock()
 
 # --- SHUTDOWN FLAG ---
 _running = True
@@ -91,16 +95,17 @@ mqtt_client.on_disconnect = on_disconnect
 
 def publish_data(data_dict: dict) -> bool:
     """Publish a JSON payload to the sensor topic. Returns True on success."""
-    try:
-        json_payload = json.dumps(data_dict)
-        result = mqtt_client.publish(TOPIC, json_payload, qos=0)
-        if result.rc != mqtt.MQTT_ERR_SUCCESS:
-            logger.error("Publish failed with rc=%s", result.rc)
+    with publish_lock:
+        try:
+            json_payload = json.dumps(data_dict)
+            result = mqtt_client.publish(TOPIC, json_payload, qos=0)
+            if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                logger.error("Publish failed with rc=%s", result.rc)
+                return False
+            return True
+        except Exception as e:
+            logger.error("Failed to publish: %s", e)
             return False
-        return True
-    except Exception as e:
-        logger.error("Failed to publish: %s", e)
-        return False
 
 
 # --- HARDWARE SETUP ---
@@ -128,9 +133,12 @@ except Exception as e:
 # --- INSTANT EVENT HANDLERS ---
 def touch_handler():
     """Handle presentation mode button press — fires instantly."""
-    timestamp = datetime.now().isoformat()
-    logger.info("Presentation mode activated!")
-    publish_data({"type": "mode", "status": "presentation", "timestamp": timestamp})
+    try:
+        timestamp = datetime.now().isoformat()
+        logger.info("Presentation mode activated!")
+        publish_data({"type": "mode", "status": "presentation", "timestamp": timestamp})
+    except Exception as e:
+        logger.error("Touch handler error: %s", e)
 
 touch_sensor.when_pressed = touch_handler
 
@@ -147,6 +155,7 @@ except Exception as e:
 
 # --- MAIN PERIODIC LOOP ---
 last_dht_read = 0.0
+prev_motion_status = None  # Track previous motion state for deduplication
 
 try:
     while _running:
@@ -160,18 +169,25 @@ try:
                 "zone_3": bool(pir_zone3.value)
             }
 
-            publish_data({
-                "type": "periodic_motion",
-                "states": motion_status,
-                "timestamp": current_time
-            })
+            # Only publish if motion state actually changed since last read
+            if motion_status != prev_motion_status:
+                publish_data({
+                    "type": "periodic_motion",
+                    "states": motion_status,
+                    "timestamp": current_time
+                })
+                prev_motion_status = motion_status.copy()
+            else:
+                logger.debug("Motion unchanged, skipping publish")
 
             # 2. DHT11 SENSOR (slow read, only every 5 seconds)
             if time.time() - last_dht_read >= DHT_READ_INTERVAL:
                 result = dht_sensor.read()
                 last_dht_read = time.time()
 
-                if result.is_valid():
+                if result is None:
+                    logger.debug("DHT11 returned None. Retrying in %ss...", DHT_READ_INTERVAL)
+                elif result.is_valid():
                     temp = result.temperature
                     humidity = result.humidity
                     logger.info(

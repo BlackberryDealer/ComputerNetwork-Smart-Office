@@ -11,7 +11,6 @@ import {
 const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883'
 
 const connectOptions = {
-  clientId: `node-client-${Math.random().toString(16).slice(2)}`,
   clean: true,
   reconnectPeriod: 2000,
   connectTimeout: 30 * 1000,
@@ -19,18 +18,18 @@ const connectOptions = {
   handshakeTimeout: 20000, // Allow more time for initial handshake on RPi
 }
 
-const pubClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: `node-pub-${Math.random().toString(16).slice(2)}` })
-const subClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: `node-sub-${Math.random().toString(16).slice(2)}` })
+const pubClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: 'node-c-pub' })
+const subClient = mqtt.connect(brokerUrl, { ...connectOptions, clientId: 'node-c-sub' })
 
 // --- SMART OFFICE DECISION ENGINE ---
 const COMMAND_TOPIC = 'smartoffice/commands/node_b';
 
-// Constants
-const MOTION_TIMEOUT = 10000; // 10 seconds timeout for LEDs
-const AC_TEMP_THRESHOLD = 25.5;
-const LED_POWER_WATTS = 50;
-const AC_POWER_WATTS = 750;
-const MIN_SAVING_INTERVAL_MS = 60000; // Only track savings for periods > 1 minute
+// Constants (configurable via environment variables)
+const MOTION_TIMEOUT = Number(process.env.MOTION_TIMEOUT_MS) || 10000; // 10s timeout for LEDs
+const AC_TEMP_THRESHOLD = Number(process.env.AC_TEMP_THRESHOLD) || 25.5;
+const LED_POWER_WATTS = Number(process.env.LED_POWER_WATTS) || 50;
+const AC_POWER_WATTS = Number(process.env.AC_POWER_WATTS) || 750;
+const MIN_SAVING_INTERVAL_MS = Number(process.env.MIN_SAVING_INTERVAL_MS) || 60000; // Only track savings > 1min
 
 // Zone occupancy state (booleans) — separate from timer handles
 const zoneOccupied = { 1: false, 2: false, 3: false };
@@ -102,7 +101,10 @@ function trackEnergySaving(offTimestamp, redisKey, powerWatts) {
   if (timeOffMs < MIN_SAVING_INTERVAL_MS) return null;
   const hours = timeOffMs / (1000 * 60 * 60);
   const energySaved = (hours * powerWatts) / 1000;
-  redisClient.incrByFloat(redisKey, hours).catch(e => console.error(e));
+  // Await Redis write to prevent data loss on failure
+  redisClient.incrByFloat(redisKey, hours).then(() => {
+    console.log(`[Analytics] Saved ${energySaved.toFixed(4)} kWh to ${redisKey}`)
+  }).catch(e => console.error(`[Analytics] Failed to save energy data:`, e));
   return energySaved;
 }
 

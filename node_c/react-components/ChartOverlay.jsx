@@ -5,9 +5,13 @@ import { io } from 'socket.io-client';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
-const socket = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 });
-
 const ChartOverlay = () => {
+  // Socket created inside component for proper lifecycle management
+  const socketRef = useRef(null);
+  if (!socketRef.current) {
+    socketRef.current = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 });
+  }
+  const socket = socketRef.current;
   const [timeRange, setTimeRange] = useState(10);
   const [chartData, setChartData] = useState({
     labels: [],
@@ -76,29 +80,55 @@ const ChartOverlay = () => {
       allTimestamps.forEach(timeMs => {
         labels.push(new Date(timeMs).toLocaleTimeString());
         
+        // O(log n) binary search for closest temperature instead of O(n) reduce
         let closestTemp = 0;
         if (parsedTemps.length > 0) {
-          closestTemp = parsedTemps.reduce((prev, curr) => {
-            return (Math.abs(curr.timeMs - timeMs) < Math.abs(prev.timeMs - timeMs) ? curr : prev);
-          }).temp;
+          let lo = 0, hi = parsedTemps.length - 1;
+          while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (parsedTemps[mid].timeMs < timeMs) lo = mid + 1;
+            else hi = mid;
+          }
+          // Check lo-1 vs lo to find the actual closest
+          if (lo > 0 && Math.abs(parsedTemps[lo - 1].timeMs - timeMs) < Math.abs(parsedTemps[lo].timeMs - timeMs)) {
+            closestTemp = parsedTemps[lo - 1].temp;
+          } else {
+            closestTemp = parsedTemps[lo].temp;
+          }
         }
         tempPoints.push(closestTemp);
         
-        // Find nearest AC event status
+        // O(log n) binary search for AC status
         let closestAcStatus = 0;
         if (parsedAc.length > 0) {
-          closestAcStatus = parsedAc.reduce((prev, curr) => {
-            return (Math.abs(curr.timeMs - timeMs) < Math.abs(prev.timeMs - timeMs) ? curr : prev);
-          }).status;
+          let lo = 0, hi = parsedAc.length - 1;
+          while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (parsedAc[mid].timeMs < timeMs) lo = mid + 1;
+            else hi = mid;
+          }
+          if (lo > 0 && Math.abs(parsedAc[lo - 1].timeMs - timeMs) < Math.abs(parsedAc[lo].timeMs - timeMs)) {
+            closestAcStatus = parsedAc[lo - 1].status;
+          } else {
+            closestAcStatus = parsedAc[lo].status;
+          }
         }
         acPoints.push(closestAcStatus);
 
-        // Find nearest Motion event status
+        // O(log n) binary search for Motion status
         let closestMotion = { zone1: 0, zone2: 0, zone3: 0 };
         if (parsedMotion.length > 0) {
-          closestMotion = parsedMotion.reduce((prev, curr) => {
-            return (Math.abs(curr.timeMs - timeMs) < Math.abs(prev.timeMs - timeMs) ? curr : prev);
-          });
+          let lo = 0, hi = parsedMotion.length - 1;
+          while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (parsedMotion[mid].timeMs < timeMs) lo = mid + 1;
+            else hi = mid;
+          }
+          if (lo > 0 && Math.abs(parsedMotion[lo - 1].timeMs - timeMs) < Math.abs(parsedMotion[lo].timeMs - timeMs)) {
+            closestMotion = parsedMotion[lo - 1];
+          } else {
+            closestMotion = parsedMotion[lo];
+          }
         }
         motion1.push(closestMotion.zone1);
         motion2.push(closestMotion.zone2);
@@ -138,6 +168,7 @@ const ChartOverlay = () => {
     return () => {
       socket.off('sensor-update', handleUpdate);
       clearTimeout(timeoutId);
+      socket.disconnect();
     };
   }, [timeRange]); // refetch when timeRange changes
 

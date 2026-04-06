@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { io } from 'socket.io-client';
 
 const MetricCard = ({ label, value, unit, subtitle, color, loading }) => (
   <div role="region" aria-label={label} style={{ flex: 1, backgroundColor: '#fff', borderRadius: '1rem', padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', textAlign: 'center' }}>
@@ -14,8 +15,13 @@ const Analytics = () => {
   const [data, setData] = useState({ automated_corrections: 0, estimated_savings_kwh: "0.0000", estimated_ac_savings_kwh: "0.0000" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const socketRef = useRef(null);
+  if (!socketRef.current) {
+    socketRef.current = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 });
+  }
+  const socket = socketRef.current;
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = useCallback(async () => {
     try {
       setError(null);
       const res = await fetch('/api/analytics');
@@ -24,17 +30,27 @@ const Analytics = () => {
       setData(json);
     } catch (e) {
       console.error('Failed to fetch analytics', e);
-      setError('Failed to load analytics');
+      setError('Failed to load analytics. Will retry...');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchAnalytics();
-    const interval = setInterval(fetchAnalytics, 10000);
-    return () => clearInterval(interval);
-  }, []);
+    // Refresh analytics on sensor updates (debounced via Socket.IO)
+    const handleUpdate = (msg) => {
+      if (msg.topic === 'smartoffice/sensors' || msg.topic?.startsWith('redis/')) {
+        fetchAnalytics();
+      }
+    };
+    socket.on('sensor-update', handleUpdate);
+
+    return () => {
+      socket.off('sensor-update', handleUpdate);
+      socket.disconnect();
+    };
+  }, [fetchAnalytics, socket]);
 
   const metrics = [
     { label: 'Automated Corrections', value: data.automated_corrections, unit: 'events', subtitle: 'Ghost Occupancy Stopped', color: '#10b981' },

@@ -1,12 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import { Wifi, Server, Activity, Cpu } from 'lucide-react';
 
-const socket = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 });
-
 // Extracted outside component to avoid re-creation on every render
-const NodeIcon = ({ icon: Icon, label, status }) => (
-  <div role="status" aria-label={`${label}: ${status}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 20px' }}>
+const NodeIcon = React.memo(({ icon: Icon, label, status }) => (
+  <div role="status" aria-live="polite" aria-atomic="true" aria-label={`${label}: ${status}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 20px' }}>
     <div style={{
       backgroundColor: '#fff',
       padding: '1.5rem',
@@ -19,9 +17,15 @@ const NodeIcon = ({ icon: Icon, label, status }) => (
     <span style={{ marginTop: '0.5rem', fontWeight: 'bold' }}>{label}</span>
     <span style={{ color: status === 'online' ? '#22c55e' : '#ef4444', fontSize: '0.8rem', textTransform: 'uppercase' }}>{status}</span>
   </div>
-);
+));
 
 const NetworkMap = () => {
+  // Socket managed inside component for proper lifecycle
+  const socketRef = useRef(null);
+  if (!socketRef.current) {
+    socketRef.current = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 });
+  }
+  const socket = socketRef.current;
   const [nodes, setNodes] = useState({
     server: 'online',
     node_a: 'offline', 
@@ -96,6 +100,7 @@ const NetworkMap = () => {
       socket.off('disconnect');
       socket.off('connect_error');
       Object.values(timeouts.current).forEach(clearTimeout);
+      socket.disconnect();
     };
   }, []);
 

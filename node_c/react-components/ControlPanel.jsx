@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 const ControlGroup = ({ name, deviceId, options, overrides, activeStates, loading, onCommand }) => {
     const currentState = activeStates[deviceId] || '...';
@@ -70,46 +70,44 @@ const ControlPanel = () => {
     PRESENTATION: 'AUTO'
   });
   const [activeStates, setActiveStates] = useState({});
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(null); // null = not loading, string = device being loaded
   const [error, setError] = useState(null);
 
-  const fetchOverrides = () => {
-    fetch('/api/overrides')
-      .then(res => {
+  const fetchOverrides = useCallback(() => {
+    Promise.all([
+      fetch('/api/overrides').then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      }),
+      fetch('/api/active-commands').then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then(data => {
+    ])
+      .then(([overridesData, commandsData]) => {
         setOverrides({
-          AC: data.AC || 'AUTO',
-          LED_1: data.LED_1 || 'AUTO',
-          LED_2: data.LED_2 || 'AUTO',
-          LED_3: data.LED_3 || 'AUTO',
-          PRESENTATION: data.PRESENTATION || 'AUTO'
+          AC: overridesData.AC || 'AUTO',
+          LED_1: overridesData.LED_1 || 'AUTO',
+          LED_2: overridesData.LED_2 || 'AUTO',
+          LED_3: overridesData.LED_3 || 'AUTO',
+          PRESENTATION: overridesData.PRESENTATION || 'AUTO'
         });
+        setActiveStates(commandsData);
         setError(null);
       })
       .catch(e => {
         console.error(e);
-        setError('Failed to sync overrides');
+        setError('Failed to sync device states');
       });
-
-    fetch('/api/active-commands')
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then(data => setActiveStates(data))
-      .catch(console.error);
-  };
+  }, []);
 
   useEffect(() => {
     fetchOverrides();
     const interval = setInterval(fetchOverrides, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchOverrides]);
 
-  const handleCommand = async (device, command) => {
+  const handleCommand = useCallback(async (device, command) => {
     try {
       setLoading(device);
       setError(null);
@@ -119,8 +117,12 @@ const ControlPanel = () => {
         body: JSON.stringify({ device_id: device, command: command })
       });
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `HTTP ${res.status}`);
+        let errorMsg = `Server error (HTTP ${res.status})`;
+        try {
+          const errData = await res.json();
+          if (errData.error) errorMsg = errData.error;
+        } catch { /* ignore JSON parse failure, use default message */ }
+        throw new Error(errorMsg);
       }
       const result = await res.json();
       if (result.success) {
@@ -131,9 +133,9 @@ const ControlPanel = () => {
       console.error(e);
       setError(`Failed to override ${device}: ${e.message}`);
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
-  };
+  }, [fetchOverrides]);
 
   return (
     <div style={{ marginTop: '1rem' }}>

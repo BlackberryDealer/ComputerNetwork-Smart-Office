@@ -1,16 +1,18 @@
-import express from 'express'
+﻿import express from 'express'
 import 'dotenv/config'
 import { createServer } from 'http'
 import { Aedes } from 'aedes'
 import net from 'net'
 import cors from 'cors'
+import helmet from 'helmet'
 import {
   humidityRepository,
   temperatureRepository,
   motionRepository,
 } from './config/redisRepository.js'
 import redisClient from './config/redis.js'
-import { publishSensorData,
+import {
+  publishSensorData,
   deviceOverrides,
   nodeStatus,
   reevaluateState,
@@ -23,9 +25,10 @@ import './mqtt.js' // Ensure MQTT client is initialized and connected
 
 const app = express()
 
-// --- MIDDLEWARE ---
+// --- SECURITY MIDDLEWARE ---
+app.use(helmet({ contentSecurityPolicy: false })) // CSP disabled for Vite dev server
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: process.env.CORS_ORIGIN || false,
   credentials: true
 }))
 app.use(express.json({ limit: '10kb' }))
@@ -73,39 +76,60 @@ app.get('/', (req, res) => {
   })
 })
 
-// Helper functions to get latest data from Redis
+// Helper functions to get latest data from Redis (optimized to fetch only 1 record)
 async function getLatestTemp() {
-  const results = await temperatureRepository.search().sortBy('timestamp', 'DESC').return.all()
-  return results && results.length > 0 ? { temperature: results[0].temperature, timestamp: results[0].timestamp } : null
+  try {
+    const results = await temperatureRepository.search().sortBy('timestamp', 'DESC').return.count(1)
+    return results && results.length > 0 ? { temperature: results[0].temperature, timestamp: results[0].timestamp } : null
+  } catch (err) {
+    console.error('Error fetching latest temp:', err)
+    return null
+  }
 }
 
 async function getLatestHumidity() {
-  const results = await humidityRepository.search().sortBy('timestamp', 'DESC').return.all()
-  return results && results.length > 0 ? { humidity: results[0].humidity, timestamp: results[0].timestamp } : null
+  try {
+    const results = await humidityRepository.search().sortBy('timestamp', 'DESC').return.count(1)
+    return results && results.length > 0 ? { humidity: results[0].humidity, timestamp: results[0].timestamp } : null
+  } catch (err) {
+    console.error('Error fetching latest humidity:', err)
+    return null
+  }
 }
 
 async function getLatestMotion() {
-  const results = await motionRepository.search().sortBy('timestamp', 'DESC').return.all()
-  return results && results.length > 0 ? { zone1: results[0].zone1, zone2: results[0].zone2, zone3: results[0].zone3, timestamp: results[0].timestamp } : null
+  try {
+    const results = await motionRepository.search().sortBy('timestamp', 'DESC').return.count(1)
+    return results && results.length > 0 ? { zone1: results[0].zone1, zone2: results[0].zone2, zone3: results[0].zone3, timestamp: results[0].timestamp } : null
+  } catch (err) {
+    console.error('Error fetching latest motion:', err)
+    return null
+  }
 }
 
 io.on('connection', async (socket) => {
   console.log('Socket client connected', socket.id)
 
-  // Send initial data from Redis
-  const temp = await getLatestTemp()
-  if (temp) {
-    socket.emit('sensor-update', { topic: 'initial/temp', payload: { temperature: temp.temperature }, timestamp: temp.timestamp })
-  }
+  try {
+    // Send initial data from Redis (parallel queries for performance)
+    const [temp, hum, motion] = await Promise.all([
+      getLatestTemp(),
+      getLatestHumidity(),
+      getLatestMotion()
+    ])
 
-  const hum = await getLatestHumidity()
-  if (hum) {
-    socket.emit('sensor-update', { topic: 'initial/humidity', payload: { humidity: hum.humidity }, timestamp: hum.timestamp })
-  }
-
-  const motion = await getLatestMotion()
-  if (motion) {
-    socket.emit('sensor-update', { topic: 'initial/motion', payload: { type: 'periodic_motion', states: { zone_1: motion.zone1, zone_2: motion.zone2, zone_3: motion.zone3 } }, timestamp: motion.timestamp })
+    if (temp) {
+      socket.emit('sensor-update', { topic: 'initial/temp', payload: { temperature: temp.temperature }, timestamp: temp.timestamp })
+    }
+    if (hum) {
+      socket.emit('sensor-update', { topic: 'initial/humidity', payload: { humidity: hum.humidity }, timestamp: hum.timestamp })
+    }
+    if (motion) {
+      socket.emit('sensor-update', { topic: 'initial/motion', payload: { type: 'periodic_motion', states: { zone_1: motion.zone1, zone_2: motion.zone2, zone_3: motion.zone3 } }, timestamp: motion.timestamp })
+    }
+  } catch (err) {
+    console.error('Error sending initial data to socket', socket.id, err)
+    socket.emit('error', { message: 'Failed to load initial data' })
   }
 
   socket.on('disconnect', () => {
@@ -114,16 +138,21 @@ io.on('connection', async (socket) => {
 })
 
 // Redis pub/sub stream to socket.io
-const subscriber = redisClient.duplicate()
-await subscriber.connect()
-await subscriber.subscribe('sensor:updates', (msg) => {
-  try {
-    const payload = JSON.parse(msg)
-    io.emit('sensor-update', payload)
-  } catch (e) {
-    console.warn('Invalid Redis stream message', msg)
-  }
-})
+let subscriber;
+try {
+  subscriber = redisClient.duplicate()
+  await subscriber.connect()
+  await subscriber.subscribe('sensor:updates', (msg) => {
+    try {
+      const payload = JSON.parse(msg)
+      io.emit('sensor-update', payload)
+    } catch (e) {
+      console.warn('Invalid Redis stream message', msg)
+    }
+  })
+} catch (err) {
+  console.error('Failed to setup Redis subscriber:', err)
+}
 
 app.get('/api/analytics', async (req, res) => {
   try {
@@ -131,9 +160,8 @@ app.get('/api/analytics', async (req, res) => {
     const timeSavedHours = await redisClient.get('analytics:time_saved_hours') || 0;
     const acTimeSavedHours = await redisClient.get('analytics:ac_time_saved_hours') || 0;
     
-    // EnergySaved = (TimeSavedInHours * 50W) / 1000
     const energySavedKWh = (parseFloat(timeSavedHours) * 50) / 1000;
-    const acEnergySavedKWh = (parseFloat(acTimeSavedHours) * 750) / 1000; // 750W for AC
+    const acEnergySavedKWh = (parseFloat(acTimeSavedHours) * 750) / 1000;
     
     res.json({
       automated_corrections: parseInt(ghostEvents, 10),
@@ -148,22 +176,20 @@ app.get('/api/analytics', async (req, res) => {
 
 app.get('/api/chart-data', async (req, res) => {
   try {
-    const minutes = Math.min(Math.max(parseInt(req.query.minutes) || 10, 1), MAX_CHART_MINUTES);
+    const parsedMinutes = parseInt(req.query.minutes);
+    const minutes = Math.min(Math.max(Number.isNaN(parsedMinutes) ? 10 : parsedMinutes, 1), MAX_CHART_MINUTES);
     const since = new Date();
     since.setMinutes(since.getMinutes() - minutes);
 
-    // Fetch temp history (paginated for safety)
     const temps = await temperatureRepository.search()
       .where('timestamp').gte(since)
       .return.all();
     
-    // Fetch AC events (paginated for safety)
     const { nodeBEventRepository } = await import('./config/redisRepository.js');
     const commands = await nodeBEventRepository.search()
       .where('timestamp').gte(since)
       .return.all();
       
-    // Parse JSON properly instead of string matching
     const acEvents = commands.filter(cmd => {
       try {
         const parsed = JSON.parse(cmd.message || '{}');
@@ -181,7 +207,6 @@ app.get('/api/chart-data', async (req, res) => {
       return { timestamp: evt.timestamp, status };
     });
 
-    // Fetch motion events (paginated for safety)
     const motions = await motionRepository.search()
       .where('timestamp').gte(since)
       .return.all();
@@ -223,19 +248,24 @@ app.post('/api/presentation', (req, res) => {
 });
 
 app.get('/api/nodes', (req, res) => {
-  res.json(nodeStatus);
+  const result = {}
+  for (const [nodeId, status] of Object.entries(nodeStatus)) {
+    result[nodeId] = {
+      status,
+      lastSeen: status === 'online' ? new Date().toISOString() : null
+    }
+  }
+  res.json(result);
 });
 
 app.post('/api/overrides', (req, res) => {
   const { device_id, command } = req.body;
   if (!device_id) return res.status(400).json({ error: 'device_id required' });
   
-  // Validate device_id against whitelist
   if (!ALLOWED_DEVICES.includes(device_id)) {
     return res.status(400).json({ error: `Invalid device_id. Allowed: ${ALLOWED_DEVICES.join(', ')}` });
   }
 
-  // Validate command against per-device whitelist
   if (command !== null && command !== 'AUTO' && !ALLOWED_COMMANDS[device_id]?.includes(command)) {
     return res.status(400).json({ error: `Invalid command '${command}' for ${device_id}` });
   }
@@ -259,12 +289,21 @@ app.post('/api/overrides', (req, res) => {
 app.post('/mqtt/publish/:topic', (req, res) => {
   const topic = req.params.topic
 
-  // Validate topic format (alphanumeric, slashes, hyphens, underscores only)
   if (!TOPIC_REGEX.test(topic)) {
     return res.status(400).json({ error: 'Invalid topic format. Only alphanumeric, /, -, _ allowed.' });
   }
 
   const payload = req.body || { value: req.query.value || 'test' }
+
+  // Validate payload: must be a plain object with reasonable size
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    return res.status(400).json({ error: 'Payload must be a JSON object.' });
+  }
+  const payloadStr = JSON.stringify(payload)
+  if (payloadStr.length > 2048) {
+    return res.status(413).json({ error: 'Payload too large. Maximum 2KB.' });
+  }
+
   publishSensorData(topic, payload)
   res.json({ status: 'published', topic, payload })
 })
@@ -280,7 +319,6 @@ app.get('/health', async (req, res) => {
     health.status = 'unhealthy';
   }
 
-  // MQTT broker runs in-process, so it's always available if the server is running
   health.mqtt = true;
 
   const statusCode = health.status === 'healthy' ? 200 : 503;
@@ -294,16 +332,16 @@ httpServer.listen(port, () => {
 
 // --- GRACEFUL SHUTDOWN ---
 async function gracefulShutdown(signal) {
-  console.log(`\n${signal} received — shutting down gracefully...`);
+  console.log(`\n${signal} received - shutting down gracefully...`);
 
-  // Stop accepting new connections
   httpServer.close(() => console.log('HTTP server closed'));
   mqttServer.close(() => console.log('MQTT server closed'));
 
-  // Close Redis connections
   try {
-    await subscriber.unsubscribe('sensor:updates');
-    await subscriber.disconnect();
+    if (subscriber) {
+      await subscriber.unsubscribe('sensor:updates');
+      await subscriber.disconnect();
+    }
     await redisClient.quit();
     console.log('Redis connections closed');
   } catch (e) {

@@ -38,11 +38,12 @@ logging.basicConfig(
 logger = logging.getLogger("NodeB")
 
 # --- CONFIGURATION ---
-BROKER_IP = os.getenv("MQTT_BROKER_IP", "10.137.164.56")
+BROKER_IP = os.getenv("MQTT_BROKER_IP", "localhost")
 BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "1883"))
 COMMAND_TOPIC = "smartoffice/commands/node_b"
 STATUS_TOPIC = "smartoffice/status/node_b"
 IDLE_TIMEOUT = 10         # seconds before device auto-shutoff
+STARTUP_GRACE_PERIOD = 30  # seconds grace before first timeout kicks in
 HEARTBEAT_INTERVAL = 2    # seconds between heartbeat publishes
 MQTT_KEEPALIVE = 60
 SERVO_MIN = -1.0
@@ -50,6 +51,10 @@ SERVO_MAX = 1.0
 SWEEP_STEP = 0.05
 FAST_DELAY = 0.01
 SLOW_DELAY = 0.05
+ACK_TOPIC = "smartoffice/acks/node_b"
+
+# Validate servo bounds are within gpiozero Servo range
+assert -1.0 <= SERVO_MIN < SERVO_MAX <= 1.0, "Servo bounds must be in [-1.0, 1.0] range"
 
 # Valid commands whitelist
 VALID_DEVICE_IDS = {"LED_1", "LED_2", "LED_3", "AC"}
@@ -96,7 +101,9 @@ except Exception as e:
 
 # --- STATE ---
 ac_mode = "OFF"
-last_msg_time = {k: time.time() for k in ["LED_1", "LED_2", "LED_3", "AC"]}
+_start_time = time.time()  # Track startup for grace period
+# Initialize with None — timeout only activates after first command or grace period expires
+last_msg_time = {k: None for k in ["LED_1", "LED_2", "LED_3", "AC"]}
 timeout_triggered = {k: False for k in ["LED_1", "LED_2", "LED_3", "AC"]}
 
 # --- MQTT CALLBACKS ---
@@ -106,11 +113,17 @@ online_payload = json.dumps({"node": "node_b", "status": "online"})
 
 def on_connect(client, userdata, flags, reason_code, properties):
     """Called when the client connects to the broker."""
+    global _start_time
     if reason_code == 0:
         logger.info("Connected to Node C broker at %s:%s", BROKER_IP, BROKER_PORT)
         client.subscribe(COMMAND_TOPIC, qos=1)
         client.publish(STATUS_TOPIC, online_payload, qos=1, retain=True)
         logger.info("Listening for commands on: %s", COMMAND_TOPIC)
+        # Reset startup grace period and timeout timers on reconnect
+        _start_time = time.time()
+        for dev_id in last_msg_time:
+            last_msg_time[dev_id] = None
+            timeout_triggered[dev_id] = False
     else:
         logger.error("Connection failed with reason code: %s", reason_code)
 
@@ -170,6 +183,14 @@ def on_message(client, userdata, msg):
             ac_mode = command
             logger.info("AC Mode updated to %s", ac_mode)
 
+        # Publish acknowledgment back to Node C
+        ack_payload = json.dumps({
+            "device_id": device_id,
+            "status": command,
+            "timestamp": datetime.now().isoformat()
+        })
+        client.publish(ACK_TOPIC, ack_payload, qos=1)
+
 
 # --- INITIALIZE MQTT CLIENT ---
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -209,46 +230,63 @@ try:
         try:
             current_time = time.time()
 
-            # Heartbeat: publish online status every 2 seconds
+            # Heartbeat: publish online status with device states every 2 seconds
             if current_time - last_ping_time > HEARTBEAT_INTERVAL:
-                client.publish(STATUS_TOPIC, json.dumps({"status": "online"}), qos=0)
+                with state_lock:
+                    heartbeat_payload = json.dumps({
+                        "status": "online",
+                        "devices": {
+                            dev: ("ON" if led.is_lit else "OFF") for dev, led in leds.items()
+                        },
+                        "ac_mode": ac_mode
+                    })
+                client.publish(STATUS_TOPIC, heartbeat_payload, qos=1)
                 last_ping_time = current_time
 
             # Check for timeout per device (thread-safe read)
+            # Skip timeout check during startup grace period and before first command
+            in_grace_period = (current_time - _start_time) < STARTUP_GRACE_PERIOD
             with state_lock:
                 for dev_id in leds:
-                    if current_time - last_msg_time[dev_id] > IDLE_TIMEOUT and not timeout_triggered[dev_id]:
+                    if (not in_grace_period
+                            and last_msg_time[dev_id] is not None
+                            and current_time - last_msg_time[dev_id] > IDLE_TIMEOUT
+                            and not timeout_triggered[dev_id]):
                         logger.warning("Timeout: No commands for %s for %ss. Turning OFF.", dev_id, IDLE_TIMEOUT)
                         leds[dev_id].off()
                         timeout_triggered[dev_id] = True
 
-                if current_time - last_msg_time["AC"] > IDLE_TIMEOUT and not timeout_triggered["AC"]:
+                if (not in_grace_period
+                        and last_msg_time["AC"] is not None
+                        and current_time - last_msg_time["AC"] > IDLE_TIMEOUT
+                        and not timeout_triggered["AC"]):
                     logger.warning("Timeout: No commands for AC for %ss. Turning OFF.", IDLE_TIMEOUT)
                     ac_mode = "OFF"
                     timeout_triggered["AC"] = True
 
                 current_ac_mode = ac_mode
 
-            # Continuous AC Servo Sweeping
+            # Continuous AC Servo Sweeping (state_lock protects position/direction)
             if current_ac_mode == "OFF":
                 time.sleep(0.05)
             else:
                 delay = FAST_DELAY if current_ac_mode == "FAST" else SLOW_DELAY
 
-                try:
-                    ac_servo.value = position
-                except Exception as e:
-                    logger.error("Servo write error: %s", e)
+                with state_lock:
+                    try:
+                        ac_servo.value = position
+                    except Exception as e:
+                        logger.error("Servo write error: %s", e)
 
-                position += SWEEP_STEP * direction
+                    position += SWEEP_STEP * direction
 
-                # Clamp to bounds and reverse direction at endpoints
-                if position >= SERVO_MAX:
-                    position = SERVO_MAX
-                    direction = -1
-                elif position <= SERVO_MIN:
-                    position = SERVO_MIN
-                    direction = 1
+                    # Clamp to bounds and reverse direction at endpoints
+                    if position >= SERVO_MAX:
+                        position = SERVO_MAX
+                        direction = -1
+                    elif position <= SERVO_MIN:
+                        position = SERVO_MIN
+                        direction = 1
 
                 time.sleep(delay)
 

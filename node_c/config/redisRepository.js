@@ -33,9 +33,12 @@ async function ensureRepositoryIndex(repository, name) {
     }
 }
 
-await ensureRepositoryIndex(humidityRepository, 'humidity');
-await ensureRepositoryIndex(temperatureRepository, 'temperature');
-await ensureRepositoryIndex(motionRepository, 'motion');
-await ensureRepositoryIndex(nodeBEventRepository, 'nodeBEvent');
+// Create all indexes in parallel for faster startup
+await Promise.all([
+  ensureRepositoryIndex(humidityRepository, 'humidity'),
+  ensureRepositoryIndex(temperatureRepository, 'temperature'),
+  ensureRepositoryIndex(motionRepository, 'motion'),
+  ensureRepositoryIndex(nodeBEventRepository, 'nodeBEvent')
+])
 
 export { humidityRepository, temperatureRepository, motionRepository, nodeBEventRepository };
