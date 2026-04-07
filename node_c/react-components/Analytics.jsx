@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { io } from 'socket.io-client';
+import { useSocket, fetchWithTimeout } from './useSocket';
 
 const MetricCard = ({ label, value, unit, subtitle, color, loading }) => (
   <div role="region" aria-label={label} style={{ flex: 1, backgroundColor: '#fff', borderRadius: '1rem', padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', textAlign: 'center' }}>
@@ -15,16 +15,12 @@ const Analytics = () => {
   const [data, setData] = useState({ automated_corrections: 0, estimated_savings_kwh: "0.0000", estimated_ac_savings_kwh: "0.0000" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const socketRef = useRef(null);
-  if (!socketRef.current) {
-    socketRef.current = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 });
-  }
-  const socket = socketRef.current;
+  const socket = useSocket();
 
   const fetchAnalytics = useCallback(async () => {
     try {
       setError(null);
-      const res = await fetch('/api/analytics');
+      const res = await fetchWithTimeout('/api/analytics');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setData(json);
@@ -48,7 +44,6 @@ const Analytics = () => {
 
     return () => {
       socket.off('sensor-update', handleUpdate);
-      socket.disconnect();
     };
   }, [fetchAnalytics, socket]);
 

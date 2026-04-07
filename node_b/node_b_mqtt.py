@@ -102,6 +102,7 @@ except Exception as e:
 # --- STATE ---
 ac_mode = "OFF"
 _start_time = time.time()  # Track startup for grace period
+_connected_before = False
 # Initialize with None — timeout only activates after first command or grace period expires
 last_msg_time = {k: None for k in ["LED_1", "LED_2", "LED_3", "AC"]}
 timeout_triggered = {k: False for k in ["LED_1", "LED_2", "LED_3", "AC"]}
@@ -113,17 +114,19 @@ online_payload = json.dumps({"node": "node_b", "status": "online"})
 
 def on_connect(client, userdata, flags, reason_code, properties):
     """Called when the client connects to the broker."""
-    global _start_time
+    global _start_time, _connected_before
     if reason_code == 0:
         logger.info("Connected to Node C broker at %s:%s", BROKER_IP, BROKER_PORT)
         client.subscribe(COMMAND_TOPIC, qos=1)
         client.publish(STATUS_TOPIC, online_payload, qos=1, retain=True)
         logger.info("Listening for commands on: %s", COMMAND_TOPIC)
-        # Reset startup grace period and timeout timers on reconnect
-        _start_time = time.time()
-        for dev_id in last_msg_time:
-            last_msg_time[dev_id] = None
-            timeout_triggered[dev_id] = False
+        # Only reset grace period on initial connection, not on reconnects
+        if not _connected_before:
+            _start_time = time.time()
+            _connected_before = True
+            for dev_id in last_msg_time:
+                last_msg_time[dev_id] = None
+                timeout_triggered[dev_id] = False
     else:
         logger.error("Connection failed with reason code: %s", reason_code)
 
@@ -183,13 +186,13 @@ def on_message(client, userdata, msg):
             ac_mode = command
             logger.info("AC Mode updated to %s", ac_mode)
 
-        # Publish acknowledgment back to Node C
-        ack_payload = json.dumps({
-            "device_id": device_id,
-            "status": command,
-            "timestamp": datetime.now().isoformat()
-        })
-        client.publish(ACK_TOPIC, ack_payload, qos=1)
+    # Publish acknowledgment OUTSIDE the lock to prevent deadlock
+    ack_payload = json.dumps({
+        "device_id": device_id,
+        "status": command,
+        "timestamp": datetime.now().isoformat()
+    })
+    client.publish(ACK_TOPIC, ack_payload, qos=1)
 
 
 # --- INITIALIZE MQTT CLIENT ---
@@ -233,13 +236,14 @@ try:
             # Heartbeat: publish online status with device states every 2 seconds
             if current_time - last_ping_time > HEARTBEAT_INTERVAL:
                 with state_lock:
-                    heartbeat_payload = json.dumps({
-                        "status": "online",
-                        "devices": {
-                            dev: ("ON" if led.is_lit else "OFF") for dev, led in leds.items()
-                        },
-                        "ac_mode": ac_mode
-                    })
+                    led_states = {dev: ("ON" if led.is_lit else "OFF") for dev, led in leds.items()}
+                    ac_mode_snapshot = ac_mode
+
+                heartbeat_payload = json.dumps({
+                    "status": "online",
+                    "devices": led_states,
+                    "ac_mode": ac_mode_snapshot
+                })
                 client.publish(STATUS_TOPIC, heartbeat_payload, qos=1)
                 last_ping_time = current_time
 

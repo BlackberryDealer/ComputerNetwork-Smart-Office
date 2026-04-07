@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { fetchWithTimeout } from './useSocket';
 
 const ControlGroup = ({ name, deviceId, options, overrides, activeStates, loading, onCommand }) => {
     const currentState = activeStates[deviceId] || '...';
@@ -75,11 +76,11 @@ const ControlPanel = () => {
 
   const fetchOverrides = useCallback(() => {
     Promise.all([
-      fetch('/api/overrides').then(res => {
+      fetchWithTimeout('/api/overrides').then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       }),
-      fetch('/api/active-commands').then(res => {
+      fetchWithTimeout('/api/active-commands').then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
@@ -111,7 +112,7 @@ const ControlPanel = () => {
     try {
       setLoading(device);
       setError(null);
-      const res = await fetch('/api/overrides', {
+      const res = await fetchWithTimeout('/api/overrides', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ device_id: device, command: command })

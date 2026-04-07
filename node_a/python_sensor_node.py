@@ -93,12 +93,24 @@ mqtt_client.on_connect = on_connect
 mqtt_client.on_disconnect = on_disconnect
 
 
-def publish_data(data_dict: dict) -> bool:
+def publish_data(data_dict: dict, qos: int = 1) -> bool:
     """Publish a JSON payload to the sensor topic. Returns True on success."""
     with publish_lock:
         try:
+            # Validate numeric fields to prevent JSON serialization failures
+            if "temp" in data_dict:
+                t = data_dict["temp"]
+                if not isinstance(t, (int, float)) or not (-50 <= t <= 80):
+                    logger.error("Invalid temperature value rejected: %s", t)
+                    return False
+            if "humidity" in data_dict:
+                h = data_dict["humidity"]
+                if not isinstance(h, (int, float)) or not (0 <= h <= 100):
+                    logger.error("Invalid humidity value rejected: %s", h)
+                    return False
+
             json_payload = json.dumps(data_dict)
-            result = mqtt_client.publish(TOPIC, json_payload, qos=0)
+            result = mqtt_client.publish(TOPIC, json_payload, qos=qos)
             if result.rc != mqtt.MQTT_ERR_SUCCESS:
                 logger.error("Publish failed with rc=%s", result.rc)
                 return False

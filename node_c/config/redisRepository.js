@@ -33,12 +33,19 @@ async function ensureRepositoryIndex(repository, name) {
     }
 }
 
-// Create all indexes in parallel for faster startup
-await Promise.all([
+// Create all indexes — use allSettled to continue even if one fails
+const indexResults = await Promise.allSettled([
   ensureRepositoryIndex(humidityRepository, 'humidity'),
   ensureRepositoryIndex(temperatureRepository, 'temperature'),
   ensureRepositoryIndex(motionRepository, 'motion'),
   ensureRepositoryIndex(nodeBEventRepository, 'nodeBEvent')
 ])
+
+indexResults.forEach((r, i) => {
+  const names = ['humidity', 'temperature', 'motion', 'nodeBEvent']
+  if (r.status === 'rejected') {
+    console.error(`Failed to create index for ${names[i]}:`, r.reason)
+  }
+})
 
 export { humidityRepository, temperatureRepository, motionRepository, nodeBEventRepository };

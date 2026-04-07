@@ -1,17 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { io } from 'socket.io-client';
+import { useSocket, fetchWithTimeout } from './useSocket';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
 const ChartOverlay = () => {
-  // Socket created inside component for proper lifecycle management
-  const socketRef = useRef(null);
-  if (!socketRef.current) {
-    socketRef.current = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 });
-  }
-  const socket = socketRef.current;
+  const socket = useSocket();
   const [timeRange, setTimeRange] = useState(10);
   const [chartData, setChartData] = useState({
     labels: [],
@@ -36,7 +31,7 @@ const ChartOverlay = () => {
     try {
       setError(null);
       setLoading(true);
-      const res = await fetch(`/api/chart-data?minutes=${timeRange}`);
+      const res = await fetchWithTimeout(`/api/chart-data?minutes=${timeRange}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       
@@ -168,7 +163,6 @@ const ChartOverlay = () => {
     return () => {
       socket.off('sensor-update', handleUpdate);
       clearTimeout(timeoutId);
-      socket.disconnect();
     };
   }, [timeRange]); // refetch when timeRange changes
 

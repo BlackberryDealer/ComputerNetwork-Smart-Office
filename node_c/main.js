@@ -21,14 +21,16 @@ import {
   activeCommands
 } from './mqtt.js'
 import { Server as SocketIOServer } from 'socket.io'
-import './mqtt.js' // Ensure MQTT client is initialized and connected
+// Initialize the MQTT client + smart decision engine (side-effect import)
+import './mqtt.js'
 
 const app = express()
 
 // --- SECURITY MIDDLEWARE ---
 app.use(helmet({ contentSecurityPolicy: false })) // CSP disabled for Vite dev server
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000').split(',').map(s => s.trim())
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || false,
+  origin: allowedOrigins,
   credentials: true
 }))
 app.use(express.json({ limit: '10kb' }))
@@ -135,6 +137,11 @@ io.on('connection', async (socket) => {
   socket.on('disconnect', () => {
     console.log('Socket client disconnected', socket.id)
   })
+
+  socket.on('error', (err) => {
+    console.error('Socket error for', socket.id, err)
+    socket.disconnect(true)
+  })
 })
 
 // Redis pub/sub stream to socket.io
@@ -174,21 +181,27 @@ app.get('/api/analytics', async (req, res) => {
   }
 });
 
+const MAX_CHART_RECORDS = 10000
+
 app.get('/api/chart-data', async (req, res) => {
   try {
-    const parsedMinutes = parseInt(req.query.minutes);
+    const rawMinutes = req.query.minutes;
+    if (rawMinutes !== undefined && !/^\d+$/.test(rawMinutes)) {
+      return res.status(400).json({ error: 'minutes must be a positive integer' });
+    }
+    const parsedMinutes = parseInt(rawMinutes);
     const minutes = Math.min(Math.max(Number.isNaN(parsedMinutes) ? 10 : parsedMinutes, 1), MAX_CHART_MINUTES);
     const since = new Date();
     since.setMinutes(since.getMinutes() - minutes);
 
     const temps = await temperatureRepository.search()
       .where('timestamp').gte(since)
-      .return.all();
+      .return.page(0, MAX_CHART_RECORDS);
     
     const { nodeBEventRepository } = await import('./config/redisRepository.js');
     const commands = await nodeBEventRepository.search()
       .where('timestamp').gte(since)
-      .return.all();
+      .return.page(0, MAX_CHART_RECORDS);
       
     const acEvents = commands.filter(cmd => {
       try {
@@ -209,7 +222,7 @@ app.get('/api/chart-data', async (req, res) => {
 
     const motions = await motionRepository.search()
       .where('timestamp').gte(since)
-      .return.all();
+      .return.page(0, MAX_CHART_RECORDS);
 
     res.json({
       temperature: temps.map(t => ({ timestamp: t.timestamp, temp: t.temperature })),
@@ -260,10 +273,15 @@ app.get('/api/nodes', (req, res) => {
 
 app.post('/api/overrides', (req, res) => {
   const { device_id, command } = req.body;
-  if (!device_id) return res.status(400).json({ error: 'device_id required' });
+  if (!device_id || typeof device_id !== 'string') return res.status(400).json({ error: 'device_id required (string)' });
   
   if (!ALLOWED_DEVICES.includes(device_id)) {
     return res.status(400).json({ error: `Invalid device_id. Allowed: ${ALLOWED_DEVICES.join(', ')}` });
+  }
+
+  // Explicitly validate command type — prevent null bypass
+  if (command !== undefined && command !== null && typeof command !== 'string') {
+    return res.status(400).json({ error: 'command must be a string, null, or undefined' });
   }
 
   if (command !== null && command !== 'AUTO' && !ALLOWED_COMMANDS[device_id]?.includes(command)) {
@@ -286,7 +304,25 @@ app.post('/api/overrides', (req, res) => {
   }
 });
 
-app.post('/mqtt/publish/:topic', (req, res) => {
+const publishRateLimiter = (() => {
+  const hits = new Map()
+  const WINDOW_MS = 60_000
+  const MAX_HITS = 60
+  return (req, res, next) => {
+    const key = req.ip || 'unknown'
+    const now = Date.now()
+    const record = hits.get(key) || { count: 0, start: now }
+    if (now - record.start > WINDOW_MS) { record.count = 0; record.start = now }
+    record.count++
+    hits.set(key, record)
+    if (record.count > MAX_HITS) {
+      return res.status(429).json({ error: 'Rate limit exceeded. Max 60 requests/minute.' })
+    }
+    next()
+  }
+})()
+
+app.post('/mqtt/publish/:topic', publishRateLimiter, (req, res) => {
   const topic = req.params.topic
 
   if (!TOPIC_REGEX.test(topic)) {
@@ -319,7 +355,14 @@ app.get('/health', async (req, res) => {
     health.status = 'unhealthy';
   }
 
-  health.mqtt = true;
+  // Check MQTT broker by verifying the Aedes broker has connected clients
+  try {
+    const connectedClients = broker.clients.size
+    health.mqtt = true
+    health.mqtt_clients = connectedClients
+  } catch {
+    health.status = 'unhealthy'
+  }
 
   const statusCode = health.status === 'healthy' ? 200 : 503;
   res.status(statusCode).json(health);
@@ -334,21 +377,32 @@ httpServer.listen(port, () => {
 async function gracefulShutdown(signal) {
   console.log(`\n${signal} received - shutting down gracefully...`);
 
-  httpServer.close(() => console.log('HTTP server closed'));
-  mqttServer.close(() => console.log('MQTT server closed'));
+  // Force exit after 10s if cleanup hangs
+  const forceTimer = setTimeout(() => {
+    console.error('Shutdown timeout exceeded — force exiting');
+    process.exit(1)
+  }, 10_000)
 
   try {
+    await new Promise((resolve) => httpServer.close(resolve))
+    console.log('HTTP server closed')
+    await new Promise((resolve) => mqttServer.close(resolve))
+    console.log('MQTT server closed')
+
     if (subscriber) {
       await subscriber.unsubscribe('sensor:updates');
       await subscriber.disconnect();
     }
     await redisClient.quit();
     console.log('Redis connections closed');
-  } catch (e) {
-    console.error('Error closing Redis:', e);
-  }
 
-  process.exit(0);
+    clearTimeout(forceTimer)
+    process.exit(0);
+  } catch (e) {
+    console.error('Error during shutdown:', e);
+    clearTimeout(forceTimer)
+    process.exit(1);
+  }
 }
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

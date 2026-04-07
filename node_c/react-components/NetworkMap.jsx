@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { io } from 'socket.io-client';
+import { useSocket, fetchWithTimeout } from './useSocket';
 import { Wifi, Server, Activity, Cpu } from 'lucide-react';
 
 // Extracted outside component to avoid re-creation on every render
@@ -20,12 +20,7 @@ const NodeIcon = React.memo(({ icon: Icon, label, status }) => (
 ));
 
 const NetworkMap = () => {
-  // Socket managed inside component for proper lifecycle
-  const socketRef = useRef(null);
-  if (!socketRef.current) {
-    socketRef.current = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 });
-  }
-  const socket = socketRef.current;
+  const socket = useSocket();
   const [nodes, setNodes] = useState({
     server: 'online',
     node_a: 'offline', 
@@ -52,7 +47,7 @@ const NetworkMap = () => {
   };
 
   useEffect(() => {
-    fetch('/api/nodes')
+    fetchWithTimeout('/api/nodes')
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -100,7 +95,6 @@ const NetworkMap = () => {
       socket.off('disconnect');
       socket.off('connect_error');
       Object.values(timeouts.current).forEach(clearTimeout);
-      socket.disconnect();
     };
   }, []);
 
